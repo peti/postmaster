@@ -21,6 +21,8 @@ HDIFILES := \
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
+MONODIRS := blockio child dns email hopenssl monadenv syslog
+
 ##### build postmaster binary
 
 .PHONY: all
@@ -94,7 +96,7 @@ TAGS:		$(SRCS)
 
 .PHONY: dist mkdist
 
-dist:		index.html $(DOCDIR)/index.html $(DOCDIR)/tutorial.html
+dist:		clean index.html $(DOCDIR)/index.html $(DOCDIR)/tutorial.html
 
 mkdist:
 	@darcs dist --dist-name postmaster-`date --iso-8601`
@@ -106,25 +108,26 @@ index.html:	README
 
 ##### administrative targets
 
-.PHONY: clean distclean init-src
+.PHONY: clean distclean redate init-src
 
 clean::
-	@find . \( -name "*.hi" -o -name "*.o" \) -exec rm {} \;
-	@rm -f dns/System/Posix/Poll.hs dns/System/Posix/GetTimeOfDay.hs
-	@rm -f dns/Network/DNS/ADNS.hs syslog/Syslog.hs
-	@rm -f postmaster TODO TAGS tags *.bak index.html
+	@rm -rf $(OBJDIR)
+	@rm -f postmaster TODO TAGS tags
 
 distclean::	clean
-	@rm -rf $(DOCDIR) $(OBJDIR)
+	@rm -rf $(DOCDIR) index.html
 	@rm -f postmaster-*.tar.gz NOTES
+	@rm -rf $(MONODIRS)
 
 redate::
 	redate Postmaster.hs tutorial.lhs README
 
-init-src::
+init-src::	$(MONODIRS)
 	@rm -f MT/monotonerc
 	@ln -s ../.monotonerc MT/monotonerc
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.blockio co blockio
+
+$(MONODIRS):
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.$@ co $@
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.child co child
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.dns co dns
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.email co email
