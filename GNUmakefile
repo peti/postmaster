@@ -32,6 +32,7 @@ SRCS := Postmaster.hs				\
 	Postmaster/Event.hs			\
 	Postmaster/Extern.hs			\
 	Postmaster/Main.hs			\
+	Postmaster/IO.hs			\
 	Postmaster/Target.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
@@ -128,6 +129,7 @@ redate::
 	redate Postmaster.hs tutorial.lhs README
 
 init-src::	$(MONODIRS) $(SRCS)
+	@-mkdir $(DOCDIR)
 	@rm -f MT/monotonerc
 	@ln -s ../.monotonerc MT/monotonerc
 

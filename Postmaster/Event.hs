@@ -1,3 +1,4 @@
+{-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Event
    Copyright   :  (c) 2005-02-05 by Peter Simons
@@ -13,6 +14,7 @@ module Postmaster.Event where
 import Prelude hiding ( catch )
 import Control.Monad.RWS hiding ( local )
 import Data.List ( nub )
+-- import Data.Typeable
 import Control.Exception
 import Control.Concurrent
 import Foreign
@@ -36,7 +38,6 @@ import MonadEnv
 type EventT = (Event -> Smtpd SmtpReply)
             -> Event -> Smtpd SmtpReply
 
-
 -- |Generate the standard ESMTP event handler.
 
 mkEvent :: HostName -> Event -> Smtpd SmtpReply
@@ -59,7 +60,7 @@ setSessionState = local . setval "SessionState"
 -- |Will 'fail' when @SessionState@ is not set.
 
 getSessionState :: Smtpd SessionState
-getSessionState = local $ withval "SessionState" $ maybe Unknown id
+getSessionState = local $ getDefault "SessionState" Unknown
 
 -- ** Local Variable: @HeloName@
 
@@ -89,7 +90,7 @@ setIsEhloPeer f e = do
   return r
 
 isEhloPeer :: Smtpd Bool
-isEhloPeer = local $ withval "IsEhloPeer" $ maybe False id
+isEhloPeer = local $ getDefault "IsEhloPeer" False
 
 -- ** Local Variable: @PeerHelo@
 
@@ -135,7 +136,7 @@ setRcptTo :: [Target] -> Smtpd ()
 setRcptTo = local . setval "RcptTo"
 
 getRcptTo :: Smtpd [Target]
-getRcptTo = fmap (maybe [] id) (local $ getval "RcptTo")
+getRcptTo = local $ getDefault "RcptTo" []
 
 addRcptTo :: Target -> Smtpd ()
 addRcptTo m = getRcptTo >>= setRcptTo . (m:)
@@ -244,7 +245,7 @@ event (SeeksHelp _) =
   say 5 0 4 "I don't implement HELP with parameters."
 
 event (SayHelo _) = do
-  trigger eventHandler ResetState
+  trigger ResetState
   whoami <- myHeloName
   say 2 5 0 (showString whoami " Postmaster; pleased to meet you.")
 
@@ -253,7 +254,7 @@ event (SayHeloAgain peer) = event (SayHelo peer)
 event (SayEhloAgain peer) = event (SayHelo peer)
 
 event (SetMailFrom mbox) = do
-  trigger eventHandler ResetState
+  trigger ResetState
   say 2 5 0 (mbox `shows` " ... sender ok")
 
 event (AddRcptTo mbox) =
@@ -292,8 +293,8 @@ event Deliver = do
 ----------------------------------------------------------------------
 
 feed :: (Ptr Word8, Int) -> Smtpd ()
-feed (ptr,n) = do
-  getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
+feed ( _ , 0) = return ()
+feed (ptr, n) = getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
 
 -- |Make a 'Ready' target 'Live'.
 
@@ -306,7 +307,7 @@ startTarget (Target rs mh@(Pipe path args) Ready) = do
 
 startTarget (Target rs Relay Ready) = do
   from <- getMailFrom
-  mta <- asks sendmailPath
+  let mta = "/usr/sbin/sendmail"  -- TODO
   let flags = [ "-f" ++ show from ] ++ map show rs
       t'    = Target rs (Pipe mta flags) Ready
   Target _ _ mst <- startTarget t'
