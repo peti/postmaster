@@ -1,0 +1,222 @@
+Postmaster ESMTP Server
+=======================
+
+:Latest Release: postmaster-2004-11-12.tar.gz_
+:Darcs:          darcs_ get http://postmaster.cryp.to/ postmaster
+
+.. contents::
+
+The Sales Pitch
+---------------
+
+  Postmaster is the mail transport agent of choice for the
+  discriminating hacker. Or, to be more accurate: for the
+  discriminating Haskell_ hacker, because if you don't know
+  any Haskell, you have about zero chance of running this
+  software right now. I plan on turning Postmaster into
+  something an end-user can run, but that's a long road.
+
+  So why yet *another* MTA? Aren't Sendmail, Qmail, Postfix,
+  and Exim enough already?
+
+  No, unfortunately they are not, because none of those
+  programs comes even close to the degree of configurability
+  I need. Postmaster allows you to configure *anything*. I
+  really mean it. You'd like to configure your MTA to do
+  mail relaying for the site ``example.org`` only on
+  Saturdays in a leap year? No problem at all. You'd like to
+  put your entire mail configuration into a DNS zone and
+  distribute it through the domain name system to your mail
+  exchangers? Be my guest. You'd like to rewrite the word
+  "no" to "yes" in any e-mail you receive which has
+  "Michelle" in the ``From:`` header and was sent between
+  8am and 10am CET? Sure thing.
+
+  Postmaster is not really an MTA, it is a framework in
+  which you can easily write your own, custom-built MTA!
+  This means that Postmaster contains everything *except
+  for* the routine ``main``. That's what you have to write.
+
+What can it do?
+'''''''''''''''
+
+  Postmaster implements an ESMTP server. Given a
+  configuration_, it starts up and listens for incoming SMTP
+  connections, handles them, and pipes the accepted e-mail
+  messages into an arbitrary local mailer of your choice. A
+  good local mailer is Procmail_.
+
+  Beyond that, you can configure and modify every little
+  step of the SMTP transaction. All the real work is done
+  through a call-back function. Postmaster triggers an
+  "event" every time a state change is required, and hopes
+  that the call-back does whatever is necessary. Among the
+  `known events`_, this one is popular::
+
+    AddRcptTo Mailbox
+
+  So by writing a handler function for this event, you can
+  configure what user addresses the server will accept. For
+  example::
+
+    joe, jane :: Mailbox
+    joe  = Mailbox [] "joe"  "example.net"
+    jane = Mailbox [] "jane" "example.net"
+
+    admin :: Mailbox
+    admin = Mailbox [] "janes.husband" "example.com"
+
+    event :: Event -> Smtpd SmtpReply
+    event (AddRcptTo mbox)
+      | mbox == joe  = procmail mbox "joe" []
+      | mbox == jane = do
+          from <- gets mailFrom
+          when (from == joe)
+            (relay [admin] >> return ())
+          procmail mbox "jane" []
+      | otherwise    = say 5 5 3 "unknown recipient"
+
+  You could also read that configuration from a file, query
+  the DNS for that recipient, or accept / refuse addresses
+  randomly. It's entirely up to you.
+
+  Postmaster provides a wealth of SMTP-related functions you
+  can use. You can (asynchronously) resolve ``A``, ``PTR``,
+  or ``MX`` records. There is a generic, type-safe Unix-like
+  environment for each session and a global one for the
+  entire daemon in which you can store any data your event
+  handler needs. Postmaster provides a framework for logging
+  messages through ``syslog(3)``. And, last but not least,
+  there is a rapidly growing collection of re-usable event
+  handlers which you can plug together to configure complex
+  setups in a few lines of code.
+
+What can it *not* do?
+'''''''''''''''''''''
+
+  At the moment, Postmaster has no mail queue. Until that is
+  implemented, there is no way to deliver outbound messages
+  via SMTP. If you have to relay e-mail for others, you will
+  need another MTA installed to do that. Sendmail_ is
+  particularly well suited for the task. Just modify your
+  ``sendmail.mc`` file to contain the lines ::
+
+    FEATURE(no_default_msa)
+    dnl DAEMON_OPTIONS(`Port=25, Name=MTA')
+    DAEMON_OPTIONS(`Port=587, Name=MSA, M=E')
+
+  and your ``submit.mc`` file to contain::
+
+    FEATURE(`msp', `', `MSA')
+
+  This configures Sendmail to act as a "mail submission
+  agent". Meaning that it will not listen on port 25 but on
+  port 587 instead. Correspondingly, your local mail system
+  will not inject messages via ``localhost:25`` but
+  ``localhost:587``. You'll effectively use Postmaster as
+  your MTA to the outside world, and Sendmail as your MTA on
+  the inside. It's not beautiful, but it will work very
+  reliably until Postmaster's own delivery agent is ready.
+
+How is the performance?
+'''''''''''''''''''''''
+
+  I have not run extensive tests due to the lack of
+  available benchmark programs. But the few
+  ad-hoc experiments attempted showed pretty good
+  performance. As you will have guessed, Postmaster does not
+  ``fork(2)`` to handle connections concurrently. Instead it
+  multiplexes an arbitrary number of connections internally
+  using ``select(2)``. This alone makes Postmaster far more
+  efficient on high-traffic sites than any other MTA I'd
+  know. In addition to that, the ``BlockIO`` module on which
+  Postmaster is based turned out to be equally fast as an
+  I/O driver written in C would be. So all in all, I'd be
+  *very* surprised if Postmaster isn't at least as efficient
+  as any of the other MTAs is.
+
+Documentation
+-------------
+
+  `Postmaster Tutorial`_
+     A walk through "Config.hs" -- this is work in progress.
+
+  `Reference Documentation`_
+     Haddock-generated reference of all exported functions.
+
+Building Postmaster
+-------------------
+
+  To compile the software, you need a bleeding-edge version
+  of GHC_. I use the current CVS HEAD. *That* bleeding-edge.
+  Furthermore, you'll need the `GNU adns`_ library and
+  OpenSSL_ installed.
+
+  Once you've fetched the sources, do the following:
+
+  1) Edit ``GNUmakefile`` to fit your system. You'll have to
+     adapt the variable ``HDI_PATH`` to point to the base
+     directory where the Haddock interface files for your
+     compiler are installed or the documentation won't
+     (re-)build.
+
+  2) Say ``make``. You need GNU make to build Postmaster, so
+     if you're running a BSD Unix, ``gmake`` should be used
+     instead.
+
+  3) If you get this compiler error::
+
+      .objs/Digest.o(.text+0x357): In function `spyU_info':
+      : undefined reference to `EVP_mdc2'
+
+     then your OpenSSL version doesn't contain the MDC2 hash
+     algorithm yet. That's no problem ... just comment out
+     the three (or so) references to it in
+     ``hopenssl/Digest.hs``.
+
+  4) If you get this compiler error::
+
+      Compiling ADNS
+      /tmp/ghc23589.hc:12:23: ADNS_stub.h:
+                No such file or directory
+
+     then you have a GHC version which contains a bug that
+     causes compilation to fail when ``-threaded`` is used
+     with ``-O``. Disable optimization in ``HFLAGS`` to work
+     around this.
+
+Copyleft
+--------
+
+  Copyright (c) 2004 Peter Simons <simons@cryp.to>. All
+  rights reserved. This software is released under the terms
+  of the `GNU General Public License
+  <http://www.gnu.org/licenses/gpl.html>`_.
+
+-----------------------------------------------------------------
+
+`[Homepage] <http://cryp.to/>`_
+
+.. _Haskell: http://haskell.org/
+
+.. _darcs: http://darcs.net/
+
+.. _Reference Documentation: docs/index.html
+
+.. _Procmail: http://www.procmail.org/
+
+.. _Sendmail: http://sendmail.org/
+
+.. _postmaster-2004-11-12.tar.gz: http://postmaster.cryp.to/postmaster-2004-11-12.tar.gz
+
+.. _known events: docs/Rfc2821.html#t%3AEvent
+
+.. _configuration: docs/Postmaster.html#2
+
+.. _GHC: http://haskell.org/ghc/
+
+.. _GNU adns: http://www.gnu.org/software/adns/
+
+.. _OpenSSL: http://www.openssl.org/
+
+.. _Postmaster Tutorial: docs/tutorial.html

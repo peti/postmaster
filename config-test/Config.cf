@@ -1,0 +1,147 @@
+-- A configuration language even crazier than sendmail.cf
+
+comment "--" ;
+comment "//" ;
+comment "#" ;
+comment "/*" "*/" ;
+comment "{-" "-}" ;
+
+-- elementary tokens
+
+token Digit     ( digit ) ;
+token SmtpCode  ( ["012345"] ["012345"] ["012345"] ) ;
+RegEx           . RegEx         ::= Value ;
+RegExList       . RegExList     ::= ValueList ;
+
+-- variables provided by the SMTP state machine
+
+Pid             . SmtpVar       ::= "pid" ;
+MyHelo          . SmtpVar       ::= "myHelo" ;
+MyAddr          . SmtpVar       ::= "myAddr" ;
+PeerHelo        . SmtpVar       ::= "peerHelo" ;
+PeerAddr        . SmtpVar       ::= "peerAddr" ;
+From            . SmtpVar       ::= "from" ;
+Data            . SmtpVar       ::= "data" ;
+To              . SmtpVarList   ::= "to" ;
+
+-- automatic variables which contain arguments to a hook or
+-- the results of a match, depending on the context
+
+AutoVar         . Var           ::= "$" Digit ;
+
+-- state-persistent variables defined by the user in the
+-- "init" hook
+
+SVar            . Var           ::= "%" Ident ;
+
+-- transient variables defined by the user
+
+UVar            . Var           ::= "$" Ident ;
+
+-- Dereferencing any of the above gives a value, which is
+-- essentially just a string.
+
+Lit             . Value         ::= String ;
+Var             . Value         ::= Var ;
+SmtpVar         . Value         ::= SmtpVar ;
+
+-- concatenation and grouping of values
+
+ConCat          . Value         ::= Value "+" Value ;
+_               . Value         ::= "(" Value ")" ;
+
+-- lists of values
+
+separator Value "," ;
+List            . ValueList     ::= "[" [Value] "]" ;
+SmtpVarList     . ValueList     ::= SmtpVarList ;
+
+-- manipulation and casting of lists
+
+AppendV         . ValueList     ::= ValueList "+" Value ;
+AppendL         . ValueList     ::= ValueList "+" ValueList ;
+RemoveV         . ValueList     ::= ValueList "-" Value ;
+RemoveL         . ValueList     ::= ValueList "-" ValueList ;
+_               . ValueList     ::= "[" ValueList "]" ;
+
+-- Our most basic state transformer (or "statement", if you
+-- want to look at it the imperative way) is the variable
+-- definition.
+
+separator STT "" ;
+
+DefV            . STT           ::= "define" Var "=" Value ;
+DefL            . STT           ::= "define" Var "=" ValueList ;
+
+SetV            . STT           ::= Var "=" Value ;
+SetList         . STT           ::= Var "=" ValueList ;
+SetSmtp         . STT           ::= SmtpVar "=" Value ;
+SetSmtpL        . STT           ::= SmtpVarList "=" ValueList ;
+
+-- This is an overloaded transformer. If the to-be-altered
+-- variable is a value, normal regular expression matching
+-- and rewriting takes place. If the variable contains a
+-- list, the transformer is mapped over the list, so that
+-- each element is re-written: Elements that rewrite to the
+-- empty string are dropped, elements that don't match the
+-- regular expression are left alone.
+
+Alter           . STT           ::= "alter" Var "=" RegEx "->" Value ;
+
+-- A condition does stuff with values and yields "true" or
+-- "false".
+
+Equal           . Cond          ::= Value "==" Value ;
+Not             . Cond          ::= "not" Cond ;
+Else            . Cond          ::= "else" ;
+_               . Cond          ::= "(" Cond ")" ;
+
+Match           . Cond          ::= Value "=~" RegEx ;
+MatchList       . Cond          ::= ValueList "=~" RegEx ;
+MatchREList     . Cond          ::= Value "=~" RegExList ;
+
+User            . Value         ::= "user"   Value ;
+Domain          . Value         ::= "domain" Value ;
+Binary          . Value         ::= "binary" Value ;
+
+A               . RRType        ::= "A" ;
+PTR             . RRType        ::= "PTR" ;
+MX              . RRType        ::= "MX" ;
+Resolve         . Cond          ::= "resolve" RRType Value ;
+
+IsUser          . Cond          ::= "isUser" Value ;
+
+Reply           . Action        ::= "reply" SmtpCode Value ;
+ReplyL          . Action        ::= "reply" SmtpCode ValueList ;
+
+IfThen          . STT           ::= Cond "=>" Action ;
+
+Hook            . Hook          ::= "{" [STT] "}" ;
+Run'            . Action        ::= Hook ;
+Run             . STT           ::= "run" Ident ;
+
+separator Config "" ;
+DefHook         . Config        ::= "define" Ident "=" Hook ;
+DefSmtpHook     . Config        ::= SmtpHook "=" Hook ;
+
+InitH           . SmtpHook      ::= "init" ;
+EhloH           . SmtpHook      ::= "ehlo" ;
+HelpH           . SmtpHook      ::= "help" ;
+NoopH           . SmtpHook      ::= "noop" ;
+RSetH           . SmtpHook      ::= "rset" ;
+MailH           . SmtpHook      ::= "mail" ;
+RcptH           . SmtpHook      ::= "rcpt" ;
+DataH           . SmtpHook      ::= "data" ;
+
+-- ReadList        . Value    ::= "readList" Value ;
+-- WriteList       . Stmt     ::= "writeList" Value Value ;
+-- FileExists      . Cond     ::= "fileExists" Value ;
+--
+-- Include         . Stmt     ::= "include" Value ;
+
+Mbox            . Action        ::= "mbox" Value ;
+Relay           . Action        ::= "relay" Value ;
+Alias           . Action        ::= "alias" Value ;
+Pipe            . Action        ::= "pipe" Value ;
+
+Log             . STT           ::= "log" Value ;

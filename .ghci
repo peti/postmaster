@@ -1,0 +1,1 @@
+:set -Wall -idns -ichild -iemail -iblockio -isyslog -ihopenssl -hidir .objs -odir .objs

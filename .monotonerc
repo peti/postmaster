@@ -1,0 +1,21 @@
+-- .monotonerc for Postmaster
+
+function ignore_file(name)
+  if (name == "TAGS") then return true end
+  if (name == "NOTES") then return true end
+  if (name == "index.html") then return true end
+
+  if (string.find(name, "^%.objs/")) then return true end
+  if (string.find(name, "^_darcs/")) then return true end
+  if (string.find(name, "^blockio/")) then return true end
+  if (string.find(name, "^child/")) then return true end
+  if (string.find(name, "^dns/")) then return true end
+  if (string.find(name, "^docs/")) then return true end
+  if (string.find(name, "^email/")) then return true end
+  if (string.find(name, "^hopenssl/")) then return true end
+  if (string.find(name, "^postmaster$")) then return true end
+  if (string.find(name, "^postmaster-.*%.tar%.gz")) then return true end
+  if (string.find(name, "^syslog/")) then return true end
+
+  return false
+end

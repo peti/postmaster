@@ -1,0 +1,23 @@
+init =
+  {
+  define %localnames =
+    [ "cryp.to"
+    , "babylon.pfm-mainz.de"
+    ]
+  }
+
+define logHelper =
+  {
+  log $1 + " called with $0 = " + $0 + "'"
+  }
+
+rcpt =
+  {
+  $1 = "rcpt"
+  run loghelper
+  domain $0 =~ [ %localnames ] =>
+    {
+    isUser (user $0) => reply 250 "user ok"
+    else => reply 550 "user unknown"
+    }
+  }
