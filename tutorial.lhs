@@ -32,12 +32,13 @@ care how to configure a real bad-ass MTA. So I'll do just
 that and refer you to the `reference documentation`_ for
 the details.
 
+::
+
 > module Main where
 >
 > import System.IO
 > import System.Time
 > import System.Posix.User
-> -- import Foreign.Marshal.Array ( withArray )
 > import Data.Char
 > import Data.List
 > import Postmaster hiding ( main )
@@ -49,7 +50,7 @@ the details.
 > port = PortNumber 2525
 
 > run :: EventT -> IO ()
-> run f = main' 1024 port f
+> run f = main' ioBufferSize port f
 
 You have a working SMTP daemon now. Just start it with ``run
 id`` and ``telnet`` to the server::
@@ -71,6 +72,11 @@ The default configuration will ...
 - accept every MAIL command,
 - refuse every RCPT command;
 - thus, refuse DATA commands for lack of recipients.
+
+Writing Event Handlers
+''''''''''''''''''''''
+
+::
 
 > debugEH :: String -> EventT
 > debugEH name f e = do
@@ -163,17 +169,17 @@ entire SMTP dialogue::
 
  TODO: Doesn't work in new design!
 
- > runTest :: EventT -> [String] -> IO ()
- > runTest f xs =
- >   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
- >   mkConfig $ \cfg -> do
- >     let buf = xs >>= (++"\r\n")
- >         n   = length buf
- >     withArray (mapEnum buf) $ \p ->
- >       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
- >     return ()
- >   where
- >   mapEnum = map (toEnum . fromEnum)
+ | runTest :: EventT -> [String] -> IO ()
+ | runTest f xs =
+ |   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
+ |   mkConfig $ \cfg -> do
+ |     let buf = xs >>= (++"\r\n")
+ |         n   = length buf
+ |     withArray (mapEnum buf) $ \p ->
+ |       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
+ |     return ()
+ |   where
+ |   mapEnum = map (toEnum . fromEnum)
 
 Given a test session like this ... ::
 
@@ -190,8 +196,8 @@ Given a test session like this ... ::
 ... you can run Postmaster with the ``runTest`` helper.
 That's a good way to test our ``rfc2821`` MTA from above::
 
- > testRfc2821 :: FilePath -> IO ()
- > testRfc2821 path = runTest (rfc2821 path) testMsg
+ | testRfc2821 :: FilePath -> IO ()
+ | testRfc2821 path = runTest (rfc2821 path) testMsg
 
 Run it with ``testRfc2821 "/tmp/important-mail"`` and you'll
 have the data section in that file. Repeated runs will
@@ -362,14 +368,6 @@ Aliases ... phew. That ought to be difficult? ::
 >       = trigger (AddRcptTo mbox')
 >   | otherwise  = f e
 
-The function ``trigger`` is exported by Postmaster. It's a
-convenient way of getting the the current configuration and
-calling the event handler with the given parameter. Here is
-the definition::
-
-  trigger :: (Callbacks -> (a -> Smtpd b)) -> a -> Smtpd b
-  trigger f x = asks (f . callbacks) >>= \f' -> f' x
-
 Why do we need ``trigger``? Instead of that definition, we
 could equally well have used::
 
@@ -389,13 +387,12 @@ actually. But I'd rather define an explicit handler for
 addresses like that. ``alias`` rewrites addresses; nothing
 more, nothing less. Here is a short demo function::
 
- > runAliasTest :: IO ()
- > runAliasTest = runTest (myalias . stdConfig) stdTest
- >   where
- >   lhs     = read "non.existent@localhost"
- >   rhs     = read "root@localhost"
- >   myalias = alias [(lhs,rhs)]
-
+ | runAliasTest :: IO ()
+ | runAliasTest = runTest (myalias . stdConfig) stdTest
+ |   where
+ |   lhs     = read "non.existent@localhost"
+ |   rhs     = read "root@localhost"
+ |   myalias = alias [(lhs,rhs)]
 
 You will have noticed that the mechanism doesn't look like
 the usual aliases file. It maps addresses one-to-one, not
@@ -410,21 +407,17 @@ to have one-to-many mappings, this a simple way to do it::
 >                = mkRhs
 >   | otherwise  = f e
 
- > runExploderTest :: IO ()
- > runExploderTest = runTest (expl . stdConfig) stdTest
- >   where
- >   expl = explode (read "non.existent@localhost")
- >            (do shell [] "cat >/dev/null"
- >                shell [] "cat >/dev/null"
- >                -- add more
- >                say 2 5 0 "great")
+ | runExploderTest :: IO ()
+ | runExploderTest = runTest (expl . stdConfig) stdTest
+ |   where
+ |   expl = explode (read "non.existent@localhost")
+ |            (do shell [] "cat >/dev/null"
+ |                shell [] "cat >/dev/null"
+ |                -- add more
+ |                say 2 5 0 "great")
 
 Cooler Event Handlers
 ---------------------
-
-* ``compatSendmail`` breaks pipelining because it tries to
-  simulate state by accessing the input stream
-
 
 The Generic Environment
 '''''''''''''''''''''''
@@ -440,51 +433,6 @@ under Unix do. ::
 
   local  :: EnvT a -> Smtpd a
   global :: EnvT a -> Smtpd a
-
-Configuring At Run-Time
-'''''''''''''''''''''''
-
-::
-
-> data UserConf = UserTarget Mailbox UserTarget
-
-> data UserTarget = Forward
->                 | Shell String
->                 | User String
->                 | Rewrite Mailbox
->                 | Explode [UserTarget]
-
-> compile :: UserTarget -> (Mailbox -> Smtpd SmtpReply)
-
-> compile Forward mb      = relay [mb]
-> compile (Shell cmd) mb  = shell [mb] cmd
-> compile (User uid) mb   = localMailer mb uid
-> compile (Rewrite mb) _  = trigger (AddRcptTo mb)
-> compile (Explode ts) mb = do
->   rs <- mapM (\t -> compile t mb) ts
->   let good (Reply (Code Success _ _) _) = True
->       good _                            = False
->       anyGood = any good rs
->       bad (Reply (Code PermanentFailure _ _) _) = True
->       bad _                                     = False
->       allBad = all bad rs
->   case (anyGood, allBad) of
->     (True ,   _  ) -> say 2 5 0 (mb `shows` " recipient ok")
->     (False, False) -> say 4 5 1 (mb `shows` " mailbox unavailable")
->     (  _  , True ) -> say 5 5 4 (mb `shows` " recipient unknown")
-
-> localMailer :: Mailbox -> String -> Smtpd SmtpReply
-> localMailer mb uid = procmail [mb] uid []
-
-> localDomain :: HostName -> [(String, UserTarget)] -> [UserConf]
-> localDomain host =
->   map (\(uid,t) -> UserTarget (Mailbox [] uid host) t)
-
-
-* Import the POSIX env into ours using clever naming
-  conventions.
-
-* Do I even need ``compile``?
 
 Experimental
 ''''''''''''
@@ -520,9 +468,6 @@ Experimental
 >   relayAll _ (AddRcptTo mbox) = relay [mbox]
 >   relayAll f e                = f e
 
-A Bad-Ass MTA
--------------
-
 Disallow Routing Addresses
 ''''''''''''''''''''''''''
 
@@ -537,6 +482,8 @@ Disallow Routing Addresses
 
 Dynamic Blacklisting
 ''''''''''''''''''''
+
+::
 
 > data (Typeable a) => TimeStamped a = TS ClockTime a
 >     deriving (Typeable, Show)
@@ -769,8 +716,6 @@ References
 .. _source code: http://postmaster.cryp.to/tutorial.lhs
 
 .. _reference documentation: index.html
-
-.. _configuration: Postmaster.html#2
 
 .. _events: Rfc2821.html#t%3AEvent
 
