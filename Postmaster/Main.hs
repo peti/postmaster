@@ -26,6 +26,7 @@ import Network.BSD ( getHostName )
 import Network.DNS
 import Foreign
 import Postmaster.Base
+import Postmaster.FSM
 import Postmaster.Event
 import Postmaster.IO
 import Rfc2821
@@ -78,11 +79,12 @@ handleData buf@(Buf _ ptr n) = do
                   feed (ptr, fromIntegral n')
                   buf' <- liftIO $ flush n' buf
                   return (Nothing, buf')
-    Just i  -> do feed (ptr, (i-3))
-                  r <- trigger Deliver
+    Just i  -> do let i' = fromIntegral i'
+                  feed (ptr, (i-3))
+                  r <- trigger (Payload (ptr, i'-3))
                   trigger ResetState
                   setSessionState HaveHelo
-                  buf' <- liftIO $ flush (fromIntegral i) buf
+                  buf' <- liftIO $ flush i' buf
                   return (Just r, buf')
 
 handleDialog :: String -> Smtpd SmtpReply

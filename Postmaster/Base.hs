@@ -24,6 +24,7 @@ import MonadEnv
 import Data.Typeable
 import Rfc2821 hiding ( path )
 -- import Child
+import Postmaster.FSM
 import Postmaster.Extern
 
 -- * The @Smtpd@ Monad

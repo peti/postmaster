@@ -30,6 +30,7 @@ SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
 	Postmaster/Event.hs			\
 	Postmaster/Extern.hs			\
+	Postmaster/FSM.hs			\
 	Postmaster/Main.hs			\
 	Postmaster/IO.hs			\
 	Postmaster/Target.hs			\

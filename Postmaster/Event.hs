@@ -23,6 +23,7 @@ import Network ( HostName )
 import System.Exit ( ExitCode(..) )
 import Postmaster.Base
 import Postmaster.Extern
+import Postmaster.FSM
 import Rfc2821 hiding ( path )
 import MonadEnv
 
@@ -68,8 +69,7 @@ getSessionState = local $ getDefault (mkVar "SessionState") Unknown
 
 initHeloName :: HostName -> EventT
 initHeloName n f e = do
-  when (e == Greeting)
-    (local (withval_ (mkVar "HeloName") (maybe n id)))
+  when (e == Greeting) (local $ withval_ (mkVar "HeloName") (maybe n id))
   f e
 
 -- |Will 'fail' when @HeloName@ is not set.
@@ -248,7 +248,7 @@ event (StartData) = do
   mapM startTarget (tlocal ++ relayt) >>= setRcptTo
   say 3 5 4 "terminate data with <CRLF>.<CRLF>"
 
-event Deliver = do
+event (Payload (_,_)) = do
   ts <- getRcptTo >>= mapM closeTarget >>= mapM commitTarget
   setRcptTo ts
   let isSuccess  (Target _ _ Succeeded) = True
