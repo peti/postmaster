@@ -8,26 +8,7 @@
    Stability   :  provisional
    Portability :  Haskell 2-pre
 
-   This module provides the function 'defineVar' which can
-   be used to generate the usual set of access functions for
-   a local variable. The invocation
-
-   >   $(defineVar "foo" [t| Int |])
-
-   generates these functions:
-
-   > getFoo :: Smtpd (Maybe Int)
-   > getFoo = local (getVar (mkVar "foo"))
-   >
-   > getFoo_ :: Smtpd Int
-   > getFoo_ = local (getVar_ (mkVar "foo"))
-   >
-   > setFoo :: Int -> Smtpd ()
-   > setFoo = local . setVar (mkVar "foo")
-   >
-   > unsetFoo :: Smtpd ()
-   > unsetFoo = local (unsetVar (mkVar "foo"))
-
+   Wildly experimental stuff.
  -}
 
 module Postmaster.Meta where
@@ -73,3 +54,6 @@ defineLocalVar = defineVar [| local |]
 
 defineGlobalVar :: String -> TypeQ -> [Accessor a] -> Q [Dec]
 defineGlobalVar = defineVar [| global |]
+
+mkSig :: [TypeQ] -> TypeQ
+mkSig = foldr1 (\lhs rhs -> appT (appT arrowT lhs) rhs)
