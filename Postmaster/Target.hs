@@ -1,3 +1,4 @@
+{-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Target
    Copyright   :  (c) 2005-02-06 by Peter Simons
@@ -10,11 +11,24 @@
 
 module Postmaster.Target where
 
-import System.IO
+import Prelude hiding ( catch )
+import Foreign
+import Control.Concurrent
+import Control.Exception
 import Control.Monad.RWS hiding ( local )
-import Rfc2821 hiding ( path )
+import System.Exit ( ExitCode(..) )
+import System.IO
+import System.IO
+import System.Process
+import Data.Typeable
+import Data.List ( nub )
 import Postmaster.Base
 import Postmaster.Event
+import Rfc2821 hiding ( path )
+import Child ( timeout )
+import MonadEnv
+
+-- * Mail Targets
 
 -- |Create 'Pipe' target and 'addRcptTo' it. The mailbox
 -- parameter is just annotation; but it's a good idea to use
@@ -53,3 +67,168 @@ relay :: [Mailbox] -> Smtpd SmtpReply
 relay rs = do
   addRcptTo $ Target rs Relay Ready
   say 2 5 0 "recipient ok"
+
+-- * Generic Targets
+
+data Target = Target [Mailbox] MailHandler MailerStatus
+            deriving (Typeable)
+
+data MailHandler
+  = Pipe FilePath [String]
+  | Relay
+
+data MailerStatus
+  = Ready
+  | Live ExternHandle
+  | Failed
+  | FailedPermanently
+  | Succeeded
+
+-- ** Local Variable: @RcptTo@
+
+setRcptTo :: [Target] -> Smtpd ()
+setRcptTo = local . setval (mkVar "RcptTo")
+
+getRcptTo :: Smtpd [Target]
+getRcptTo = local $ getDefault (mkVar "RcptTo") []
+
+addRcptTo :: Target -> Smtpd ()
+addRcptTo m = getRcptTo >>= setRcptTo . (m:)
+
+-- ** TODO: All crap! Has to go away.
+
+type ExternHandle = MVar (Handle, Handle, Handle, ProcessHandle)
+
+-- |Run an external process and store its handle in an
+-- 'MVar' with a finalizer attached to it that will close
+-- the handles and kill the process when the MVar falls out
+-- of scope. The process is run with \"@\/@\" as current
+-- directory and an /empty/ enviroment. (This may change.)
+
+extern :: FilePath -> [String] -> IO ExternHandle
+extern path args = do
+  r <- runInteractiveProcess path args (Just "/") (Just [])
+  mv <- newMVar r
+  addMVarFinalizer mv (catch (cleanup r) (const (return ())))
+  let (hin,_,_,_) = r
+  hSetBuffering hin NoBuffering
+  return mv
+    where
+    cleanup (hin, hout, herr, pid) = do
+      terminateProcess pid
+      hClose hin >> hClose hout >> hClose herr
+      safeWaitForProcess pid
+      return ()
+
+-- |Wait 30 seconds max. If the process hasn't terminated by
+-- then, throw an exception. If the child process has been
+-- terminated by a signal, return @ExitFailure 137@. This is
+-- a kludge. So it will probably be in here forever.
+
+safeWaitForProcess :: ProcessHandle -> IO ExitCode
+safeWaitForProcess pid =
+  timeout maxwait loop >>= maybe badluck return
+    where
+    loop    = catch loop' (\_ -> return (ExitFailure 137))
+    loop'   = wait >> getProcessExitCode pid >>= maybe loop' return
+    wait    = threadDelay 1000000 -- 1 second
+    maxwait = 30000000            -- 30 seconds
+    badluck = fail "timeout while waiting for external process"
+
+
+----------------------------------------------------------------------
+-- * Standard Data Handler
+----------------------------------------------------------------------
+
+feedPayload :: EventT
+feedPayload _ StartData = do
+  ts <- getRcptTo
+  let isrelay (Target _ Relay Ready) = True
+      isrelay _                      = False
+      tlocal  = filter (not . isrelay) ts
+      batch   = [ rs | Target rs Relay Ready <- ts ]
+      relayt  = case nub (concat batch) of
+                  [] -> []
+                  rs -> [Target rs Relay Ready]
+  mapM startTarget (tlocal ++ relayt) >>= setRcptTo
+  say 3 5 4 "terminate data with <CRLF>.<CRLF>"
+
+feedPayload _ Deliver = do
+  ts <- getRcptTo >>= mapM closeTarget >>= mapM commitTarget
+  setRcptTo ts
+  let isSuccess  (Target _ _ Succeeded) = True
+      isSuccess  _                      = False
+      oneOK = any isSuccess ts
+  let isPermFail (Target _ _ FailedPermanently) = True
+      isPermFail _                              = False
+      allPermFail = all isPermFail ts
+  case (oneOK, allPermFail) of
+    (True ,   _  ) -> do mid <- getMailID
+                         say 2 5 0 (mid `shows` " message accepted for delivery")
+    (False, False) -> say 4 5 1 "requested action aborted: error in processing"
+    (  _  , True ) -> say 5 5 4 "transaction failed"
+
+feedPayload f e = f e
+
+feed ::(Ptr Word8, Int) -> Smtpd ()
+feed ( _ , 0) = return ()
+feed (ptr, n) = getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
+
+-- |Make a 'Ready' target 'Live'.
+
+startTarget :: Target -> Smtpd Target
+
+startTarget (Target rs mh@(Pipe path args) Ready) = do
+--  yell (StartExternal rs (path:args))
+  mv <- liftIO (extern path args)
+  return (Target rs mh (Live mv))
+
+startTarget (Target rs Relay Ready) = do
+  from <- getMailFrom
+  let mta = "/usr/sbin/sendmail"  -- TODO
+  let flags = [ "-f" ++ show from ] ++ map show rs
+      t'    = Target rs (Pipe mta flags) Ready
+  Target _ _ mst <- startTarget t'
+  return (Target rs Relay mst)
+
+startTarget t = {- yell (UnknownStartTarget t) >> -} return t
+
+-- |Give a target a chunk of data.
+
+feedTarget :: (Ptr Word8, Int) -> Target -> Smtpd Target
+feedTarget (ptr,n) t@(Target _ _ (Live mv)) = do
+  liftIO (withMVar mv (\(hin,_,_,_) -> hPutBuf hin ptr n))
+  return t
+
+feedTarget _ t = {- yell (UnknownFeedTarget t) >> -} return t
+
+-- |Close a target.
+
+closeTarget :: Target -> Smtpd Target
+closeTarget t@(Target _ _ (Live mv)) = do
+  liftIO (withMVar mv (\(hin,_,_,_) -> hClose hin))
+  return t
+
+closeTarget t = return t
+
+-- |Update a targets 'MailerStatus' to signify success or
+-- failure.
+
+commitTarget :: Target -> Smtpd Target
+commitTarget (Target rs mh (Live mv)) = do
+  rc <- liftIO $ do
+    (hin,hout,herr,pid) <- takeMVar mv
+    catch (hClose hin) (const (return ()))
+    safeWaitForProcess pid
+      `finally` hClose hout
+      `finally` hClose herr
+  -- yell (ExternalResult t rc)
+  if rc == ExitSuccess
+     then return (Target rs mh Succeeded)
+     else if    (rc == ExitFailure 65)   -- EX_DATAERR
+             || (rc == ExitFailure 67)   -- EX_NOUSER
+             || (rc == ExitFailure 68)   -- EX_NOHOST
+             then return (Target rs mh FailedPermanently)
+             else return (Target rs mh Failed)
+
+commitTarget t = {- yell (UnknownCommitTarget t) >> -} return t

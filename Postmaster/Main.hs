@@ -26,9 +26,9 @@ import Network.BSD ( getHostName )
 import Network.DNS
 import Foreign
 import Postmaster.Base
-import Postmaster.FSM
 import Postmaster.Event
 import Postmaster.IO
+import Postmaster.Target
 import Rfc2821
 import Syslog
 import BlockIO
@@ -79,19 +79,17 @@ handleData buf@(Buf _ ptr n) = do
                   feed (ptr, fromIntegral n')
                   buf' <- liftIO $ flush n' buf
                   return (Nothing, buf')
-    Just i  -> do let i' = fromIntegral i'
-                  feed (ptr, (i-3))
-                  r <- trigger (Payload (ptr, i'-3))
+    Just i  -> do feed (ptr, (i-3))
+                  r <- trigger Deliver
                   trigger ResetState
                   setSessionState HaveHelo
-                  buf' <- liftIO $ flush i' buf
+                  buf' <- liftIO $ flush (fromIntegral i) buf
                   return (Just r, buf')
 
 handleDialog :: String -> Smtpd SmtpReply
-handleDialog line' = do
-  let line = fixCRLF line'
+handleDialog line = do
   sst <- getSessionState
-  let (e,sst') = runState (smtpdFSM line) sst
+  let (e, sst') = runState (smtpdFSM (fixCRLF line)) sst
   r <- trigger e
   case r of
     Reply (Code Unused0 _ _) _          -> fail "Unused?"
@@ -148,6 +146,10 @@ main' cap port eventT = do
 main :: IO ()
 main = main' 1024 (PortNumber 2525) id
 
+-- ** Local Variable: @PeerAddr@
+
+getPeerAddr :: Smtpd (Maybe SockAddr)
+getPeerAddr = local $ getval (mkVar "PeerAddr")
 
 -- * Running 'Smtpd' Computations
 
@@ -184,6 +186,20 @@ withGlobalEnv myHelo dns eventT f = do
                    setval (mkVar "EventHandler") (EH eventH)
   newMVar (execState initEnv emptyEnv) >>= f
 
+-- |Generate the standard ESMTP event handler.
+
+mkEvent :: HostName -> Event -> Smtpd SmtpReply
+mkEvent heloName
+  = announce "PIPELINING"
+  . initHeloName heloName
+  . setMailID
+  . setMailFrom
+  . setIsEhloPeer
+  . setPeerHelo
+  . feedPayload
+  $ event
+
+
 -- ** Logging
 
 type Logger = LogMsg -> IO ()
@@ -203,9 +219,3 @@ withLogger logger f theEnv = do
 syslogger :: Logger
 syslogger (LogMsg sid _ e) = syslog Info $
   showString "SID " . shows sid . (':':) . (' ':) $ show e
-
-
--- * Local Variable: @PeerAddr@
-
-getPeerAddr :: Smtpd (Maybe SockAddr)
-getPeerAddr = local $ getval (mkVar "PeerAddr")

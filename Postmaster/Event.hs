@@ -13,17 +13,8 @@ module Postmaster.Event where
 
 import Prelude hiding ( catch )
 import Control.Monad.RWS hiding ( local )
-import Data.List ( nub )
--- import Data.Typeable
-import Control.Exception
-import Control.Concurrent
-import Foreign
-import System.IO
 import Network ( HostName )
-import System.Exit ( ExitCode(..) )
 import Postmaster.Base
-import Postmaster.Extern
-import Postmaster.FSM
 import Rfc2821 hiding ( path )
 import MonadEnv
 
@@ -38,19 +29,6 @@ import MonadEnv
 
 type EventT = (Event -> Smtpd SmtpReply)
             -> Event -> Smtpd SmtpReply
-
--- |Generate the standard ESMTP event handler.
-
-mkEvent :: HostName -> Event -> Smtpd SmtpReply
-mkEvent heloName
-  = announce "PIPELINING"
-  . initHeloName heloName
-  . setMailID
-  . setMailFrom
-  . setIsEhloPeer
-  . setPeerHelo
-  $ event
-
 
 -- ** Local Variable: @SessionState@
 
@@ -130,17 +108,6 @@ setMailFrom f e = do
 getMailFrom :: Smtpd Mailbox
 getMailFrom = local $ getval_ (mkVar "MailFrom")
 
-
--- ** Local Variable: @RcptTo@
-
-setRcptTo :: [Target] -> Smtpd ()
-setRcptTo = local . setval (mkVar "RcptTo")
-
-getRcptTo :: Smtpd [Target]
-getRcptTo = local $ getDefault (mkVar "RcptTo") []
-
-addRcptTo :: Target -> Smtpd ()
-addRcptTo m = getRcptTo >>= setRcptTo . (m:)
 
 -- ** Local Variable: @MailID@
 
@@ -236,97 +203,5 @@ event (SetMailFrom mbox) = do
 event (AddRcptTo mbox) =
   say 5 5 3 (mbox `shows` " ... unknown recipient")
 
-event (StartData) = do
-  ts <- getRcptTo
-  let isrelay (Target _ Relay Ready) = True
-      isrelay _                      = False
-      tlocal  = filter (not . isrelay) ts
-      batch   = [ rs | Target rs Relay Ready <- ts ]
-      relayt  = case nub (concat batch) of
-                  [] -> []
-                  rs -> [Target rs Relay Ready]
-  mapM startTarget (tlocal ++ relayt) >>= setRcptTo
-  say 3 5 4 "terminate data with <CRLF>.<CRLF>"
-
-event (Payload (_,_)) = do
-  ts <- getRcptTo >>= mapM closeTarget >>= mapM commitTarget
-  setRcptTo ts
-  let isSuccess  (Target _ _ Succeeded) = True
-      isSuccess  _                      = False
-      oneOK = any isSuccess ts
-  let isPermFail (Target _ _ FailedPermanently) = True
-      isPermFail _                              = False
-      allPermFail = all isPermFail ts
-  case (oneOK, allPermFail) of
-    (True ,   _  ) -> do mid <- getMailID
-                         say 2 5 0 (mid `shows` " message accepted for delivery")
-    (False, False) -> say 4 5 1 "requested action aborted: error in processing"
-    (  _  , True ) -> say 5 5 4 "transaction failed"
-
-
-----------------------------------------------------------------------
--- * Standard Data Handler
-----------------------------------------------------------------------
-
-feed :: (Ptr Word8, Int) -> Smtpd ()
-feed ( _ , 0) = return ()
-feed (ptr, n) = getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
-
--- |Make a 'Ready' target 'Live'.
-
-startTarget :: Target -> Smtpd Target
-
-startTarget (Target rs mh@(Pipe path args) Ready) = do
-  yell (StartExternal rs (path:args))
-  mv <- liftIO (extern path args)
-  return (Target rs mh (Live mv))
-
-startTarget (Target rs Relay Ready) = do
-  from <- getMailFrom
-  let mta = "/usr/sbin/sendmail"  -- TODO
-  let flags = [ "-f" ++ show from ] ++ map show rs
-      t'    = Target rs (Pipe mta flags) Ready
-  Target _ _ mst <- startTarget t'
-  return (Target rs Relay mst)
-
-startTarget t = yell (UnknownStartTarget t) >> return t
-
--- |Give a target a chunk of data.
-
-feedTarget :: (Ptr Word8, Int) -> Target -> Smtpd Target
-feedTarget (ptr,n) t@(Target _ _ (Live mv)) = do
-  liftIO (withMVar mv (\(hin,_,_,_) -> hPutBuf hin ptr n))
-  return t
-
-feedTarget _ t = yell (UnknownFeedTarget t) >> return t
-
--- |Close a target.
-
-closeTarget :: Target -> Smtpd Target
-closeTarget t@(Target _ _ (Live mv)) = do
-  liftIO (withMVar mv (\(hin,_,_,_) -> hClose hin))
-  return t
-
-closeTarget t = return t
-
--- |Update a targets 'MailerStatus' to signify success or
--- failure.
-
-commitTarget :: Target -> Smtpd Target
-commitTarget t@(Target rs mh (Live mv)) = do
-  rc <- liftIO $ do
-    (hin,hout,herr,pid) <- takeMVar mv
-    catch (hClose hin) (const (return ()))
-    safeWaitForProcess pid
-      `finally` hClose hout
-      `finally` hClose herr
-  yell (ExternalResult t rc)
-  if rc == ExitSuccess
-     then return (Target rs mh Succeeded)
-     else if    (rc == ExitFailure 65)   -- EX_DATAERR
-             || (rc == ExitFailure 67)   -- EX_NOUSER
-             || (rc == ExitFailure 68)   -- EX_NOHOST
-             then return (Target rs mh FailedPermanently)
-             else return (Target rs mh Failed)
-
-commitTarget t = yell (UnknownCommitTarget t) >> return t
+event StartData = event NotImplemened
+event Deliver   = event NotImplemened

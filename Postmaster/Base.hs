@@ -15,17 +15,12 @@ import Prelude hiding ( catch )
 import Foreign
 import System.IO
 import Network.Socket hiding ( listen, shutdown )
-import System.Exit ( ExitCode(..) )
 import Control.Exception
--- import Control.Concurrent
 import Control.Monad.RWS hiding ( local )
 import Network.DNS
 import MonadEnv
 import Data.Typeable
 import Rfc2821 hiding ( path )
--- import Child
-import Postmaster.FSM
-import Postmaster.Extern
 
 -- * The @Smtpd@ Monad
 
@@ -120,24 +115,6 @@ queryPTR h = getDNSResolver >>= \r -> liftIO $ query resolvePTR r h
 queryMX :: HostName -> Smtpd (Maybe [(HostName, HostAddress)])
 queryMX h = getDNSResolver >>= \r -> liftIO $ query resolveMX r h
 
--- ** Mail Targets
-
-data Target = Target [Mailbox] MailHandler MailerStatus
-            deriving (Show, Typeable)
-
-data MailHandler
-  = Pipe FilePath [String]
-  | Relay
-  deriving (Show)
-
-data MailerStatus
-  = Ready
-  | Live ExternHandle
-  | Failed
-  | FailedPermanently
-  | Succeeded
-  deriving (Show)
-
 -- ** Logging
 
 data LogMsg = LogMsg ID SmtpdState LogEvent
@@ -168,13 +145,4 @@ data LogEvent
   | EventHandlerResult String Event SmtpCode
   | CurrentState
   | AssignMailID ID
-  | UnknownStartTarget Target
-  | UnknownFeedTarget Target
-  | UnknownCommitTarget Target
-  | StartExternal [Mailbox]  [String]
-  | FeedTarget Target String
-  | ExternalResult Target ExitCode
   deriving (Show)
-
-instance Show ExternHandle where
-  show _ = "<ExternHandle>"
