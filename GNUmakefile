@@ -4,7 +4,7 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -debug -O -Wall \
+HFLAGS	 := -threaded -O0 -Wall \
             -idns -iemail -iblockio -ichild -ihopenssl \
 	    -imonadenv -isyslog '-\#include <adns.h>' \
 	    '-\#include <sys/poll.h>' \
@@ -28,6 +28,11 @@ MONODIRS := blockio child dns email hopenssl monadenv syslog
 .PHONY: all
 
 SRCS := Postmaster.hs				\
+	Postmaster/Base.hs			\
+	Postmaster/Event.hs			\
+	Postmaster/Extern.hs			\
+	Postmaster/Main.hs			\
+	Postmaster/Target.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
 	dns/Data/Endian.hs			\
@@ -122,7 +127,7 @@ distclean::	clean
 redate::
 	redate Postmaster.hs tutorial.lhs README
 
-init-src::	$(MONODIRS)
+init-src::	$(MONODIRS) $(SRCS)
 	@rm -f MT/monotonerc
 	@ln -s ../.monotonerc MT/monotonerc
 
