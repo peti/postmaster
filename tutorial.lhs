@@ -41,6 +41,8 @@ the details.
 > import System.Posix.User
 > import Data.Char
 > import Data.List
+> import Postmaster.FSM.EventHandler
+> import Postmaster.FSM.HeloName
 > import Postmaster hiding ( main )
 
 > ioBufferSize :: Capacity

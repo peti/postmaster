@@ -25,7 +25,11 @@ import Network.BSD ( getHostName )
 import Network.DNS
 import Foreign
 import Postmaster.Base
-import Postmaster.Event
+import Postmaster.FSM
+import Postmaster.FSM.EventHandler
+import Postmaster.FSM.DataHandler
+import Postmaster.FSM.SessionState
+import Postmaster.FSM.DNSResolver
 import Postmaster.IO
 import Rfc2821
 import Syslog
@@ -43,10 +47,7 @@ smtpdHandler hOut theEnv buf = runSmtpd (smtpd buf >>= handler) theEnv
   handler :: ([SmtpReply], Buffer) -> Smtpd Buffer
   handler (rs, buf') = do
     safeWrite (hPutStr hOut (concatMap show rs) >> hFlush hOut)
-    let term (Reply (Code Success Connection 1) _)          = True
-        term (Reply (Code TransientFailure Connection 1) _) = True
-        term _                                              = False
-    when (any term rs) (fail "shutdown")
+    when (any isShutdown rs) (fail "shutdown")
     return buf'
 
 -- |The unified interface to dialog and data section. This
@@ -77,11 +78,7 @@ handleDialog line = do
   sst <- getSessionState
   let (e, sst') = runState (smtpdFSM (fixCRLF line)) sst
   r <- trigger e
-  case r of
-    Reply (Code Unused0 _ _) _          -> fail "Unused?"
-    Reply (Code TransientFailure _ _) _ -> return ()
-    Reply (Code PermanentFailure _ _) _ -> return ()
-    _                                   -> setSessionState sst'
+  when (isSuccess r) (setSessionState sst')
   return r
 
 

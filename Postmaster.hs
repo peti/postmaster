@@ -17,7 +17,7 @@
 
 module Postmaster
   ( module Postmaster.Base
-  , module Postmaster.Event
+  , module Postmaster.FSM
   , module Postmaster.IO
   , module Postmaster.Main
   , module Control.Monad.RWS
@@ -44,7 +44,7 @@ import Rfc2821 hiding ( path )
 import Syslog
 import BlockIO ( Capacity )
 import Postmaster.Base
-import Postmaster.Event
+import Postmaster.FSM
 import Postmaster.IO
 import Postmaster.Main
 

@@ -17,7 +17,6 @@ import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
-import Network.DNS
 import MonadEnv
 import BlockIO
 import Data.Typeable
@@ -53,11 +52,19 @@ say a b c msg = return (reply a b c [msg])
 global :: EnvT a -> Smtpd a
 global f = ask >>= liftIO . global' f
 
-local :: (MonadState Env m) => EnvT a -> m a
+local :: EnvT a -> Smtpd a
 local f = do
   (a, st) <- gets (runState f)
   put st
   return a
+
+type SmtpdVariable = forall a. Typeable a => (Variable -> EnvT a) -> Smtpd a
+
+defineLocal :: String -> SmtpdVariable
+defineLocal n = \f -> local (f (mkVar n))
+
+defineGlobal :: String -> SmtpdVariable
+defineGlobal n = \f -> global (f (mkVar n))
 
 type ID = Int
 
@@ -80,62 +87,14 @@ mySessionID = do
 
 -- ** Event Handler
 
-newtype EventHandler = EH (Event -> Smtpd SmtpReply)
-                     deriving (Typeable)
+type EventHandler = Event -> Smtpd SmtpReply
 
--- |If the @EventHandler@ variable is unset in the 'local'
--- environment, the 'global' one will be used.
-
-myEventHandler :: Smtpd (Event -> Smtpd SmtpReply)
-myEventHandler = do
-  let key = mkVar "EventHandler"
-  EH f <- local (getval key)
-      >>= maybe (global $ getval_ key) return
-  return f
-
--- |Trigger the given event. Exceptions will be caught and
--- cause 'Shutdown' to be triggered.
-
-trigger :: Event -> Smtpd SmtpReply
-trigger e = myEventHandler >>= ($ e)
+type EventT  = EventHandler -> EventHandler
 
 -- ** Data Handler
 
 type DataHandler = Buffer -> Smtpd (Maybe SmtpReply, Buffer)
 
-newtype DH = DH DataHandler   deriving (Typeable)
-
-setDataHandler :: DataHandler -> Smtpd ()
-setDataHandler f = local (setval key (DH f))
-  where key = mkVar "DataHandler"
-
-myDataHandler :: Smtpd DataHandler
-myDataHandler = local (getval_ key) >>= \(DH f) -> return f
-  where key = mkVar "DataHandler"
-
-feed :: DataHandler
-feed buf = myDataHandler >>= ($ buf)
-
-
--- ** DNS Resolving
-
-newtype DNSResolver = DNSR Resolver
-                    deriving (Typeable)
-
-getDNSResolver :: Smtpd Resolver
-getDNSResolver =
-  global $ getval_ (mkVar "DNSResolver") >>= return . \(DNSR f) -> f
-
-queryA :: HostName -> Smtpd (Maybe [HostAddress])
-queryA h = getDNSResolver >>= \r -> liftIO $ query resolveA r h
-
-queryPTR :: HostAddress -> Smtpd (Maybe [HostName])
-queryPTR h = getDNSResolver >>= \r -> liftIO $ query resolvePTR r h
-
-queryMX :: HostName -> Smtpd (Maybe [(HostName, HostAddress)])
-queryMX h = getDNSResolver >>= \r -> liftIO $ query resolveMX r h
-
--- ** Logging
 
 data LogMsg = LogMsg ID SmtpdState LogEvent
             deriving (Show)

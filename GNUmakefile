@@ -28,7 +28,6 @@ MONODIRS := blockio child hopenssl monadenv syslog
 
 SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
-	Postmaster/Event.hs			\
 	Postmaster/Main.hs			\
 	Postmaster/IO.hs			\
 	blockio/BlockIO.hs			\
