@@ -23,29 +23,7 @@ with those flags given on the command-line. (If you run
 ``ghci`` from Emacs this should be configured
 automatically.)
 
-I have decided against explaining the internals of the
-daemon. I'll write this text treating the functions
-Postmaster provides just like any other Haskell library. I
-think it is better to do it this way because you, as the
-user, probably don't care how Postmaster works. You only
-care how to configure a real bad-ass MTA. So I'll do just
-that and refer you to the `reference documentation`_ for
-the details.
-
-Alright, what are our design objectives for the MTA?
-
- 1) It MUST be bad-ass.
-
- 2) It MUST be impolite to the peer.
-
- 3) It MUST refuse any e-mail it possibly can without
-    really *obviously* violating the RFCs.
-
- 4) It SHOULD deliver everything else to your mailbox.
-
-Fortunately, Postmaster provides (1) and (2) out-of-the-box,
-so we can focus on the latter two points. And we'll begin
-with this::
+::
 
 > module Main where
 >
@@ -57,18 +35,8 @@ with this::
 > import Data.List
 > import Postmaster
 
-The Postmaster daemon needs two things before it can run: A
-configuration_ and a port number. [1]_ The function
-``mkConfig :: IO Config`` creates a configuration with
-sensible defaults, and for our tests we'll run the daemon on
-Port 2525::
-
 > port :: PortID
 > port = PortNumber 2525
-
-For the benefit of the interactive nature of this tutorial,
-however, we add a mechanism to modify the configuration
-conveniently, so that we can run different versions::
 
 > main' :: (Config -> Config) -> IO ()
 > main' f = smtpdMain f port
@@ -157,97 +125,6 @@ the system log file you've configured for ``syslog(3)``)::
   SID 1: StartEventHandler "default" Greeting
   SID 1: EventHandlerResult "default" Greeting 220
 
-Of course, ``Smtpd`` happens to be the ``IO`` monad. So you
-have carte blanche to do whatever you please in an event
-handler. For instance, with just a few lines of code we can
-implement the complete core functionality of [Sendmail]_.
-Look at this::
-
- Impossible now. The handles are no longer available.
-
- > compatSendmail :: EventT
- > compatSendmail _ (Unrecognized "opensesame\r\n") = do
- >   hin  <- asks hIn   :: Smtpd Handle
- >   hout <- asks hOut  -- probably: hin == hout
- >   rc <- liftIO $ do
- >     -- give feedback
- >     hPutStr hout "250 Please enter your wish.\r\n"
- >     hFlush hout
- >     -- read a line and strip trailing \r
- >     cmd <- hGetLine hin
- >     let cmd' = (reverse . drop 1 . reverse) cmd
- >     -- handle it the way Sendmail would
- >     (shIn,shOut,_,pid) <- runInteractiveCommand cmd'
- >     hClose shIn
- >     hGetContents shOut >>= hPutStr hout
- >     -- wait for the process to terminate
- >     Postmaster.safeWaitForProcess pid
- >   case rc of
- >     ExitSuccess   -> say 2 5 0 "Thank you for using Sendmail."
- >     ExitFailure _ -> say 4 3 0 ("failed with: " ++ show rc)
- >
- > compatSendmail f e = f e
-
-And now you have a Sendmail! ::
-
- > asSendmail :: IO ()
- > asSendmail = run compatSendmail
-
-Note that the extension integrates nicely with the rest of
-the daemon: the session continues to work normally after
-``compatSendmail`` returns. Sendmail usually can't return
-cleanly when this functionality is used. Here is an example
-session::
-
-  220 peti.cryp.to Postmaster ESMTP Server
-  opensesame
-  250 Please enter your wish.
-  ls -l /etc/passwd
-  -rw-r--r--  1 root root 3302 Jul 12 22:17 /etc/passwd
-  250 Thank you for using Sendmail.
-  QUIT
-  221 peti.cryp.to closing connection
-
-But what is a cool extension like this worth if the world
-doesn't *know* about it? Now that we can do this, we'd like
-to list some fancy keyword in the response to EHLO, too. So
-we wrap the ``SayEhlo`` event::
-
-> announce :: EventT
-> announce f e@(SayEhlo _) = do
->   Reply rc msg <- f e
->   let msg' = msg ++ ["OPENSESAME"]
->   case rc of
->     Code Success _ _ -> return (Reply rc msg')
->     _                -> return (Reply rc msg)
-> announce f e = f e
-
- > openSendmail :: IO ()
- > openSendmail = run (announce . compatSendmail)
-
-Now your daemon advertises what it is capable of when EHLO
-is issued::
-
-  ehlo brother
-  250-peti.cryp.to Postmaster; pleased to meet you.
-  250-PIPELINING
-  250 OPENSESAME
-
-And guess what happens? You are just sitting there,
-wondering what this "pipelining" thing means, then some
-weirdo comes into your office screaming about how your
-extension is a security risk, yadda-yadda-yadda. So what do
-we do? We add access control! ::
-
- > msEndmail :: EventT
- > msEndmail f e@(Unrecognized "opensesame\r\n") = do
- >   sst <- gets sessionState
- >   if sst < HaveHelo
- >      then say 5 0 3 "Please say HELO first."
- >      else compatSendmail f e
- > msEndmail f e = f e
-
-
 Configuring Mail Targets
 ------------------------
 
@@ -313,7 +190,7 @@ to call Postmaster with an input buffer that contains the
 entire SMTP dialogue::
 
 > runTest :: EventT -> [String] -> IO ()
-> runTest f xs =
+> runTest f xs =             -- TODO: broken in new version!
 >   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
 >   mkConfig $ \cfg -> do
 >     let buf = xs >>= (++"\r\n")

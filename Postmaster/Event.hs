@@ -56,7 +56,7 @@ mkEvent heloName
 setSessionState :: SessionState -> Smtpd ()
 setSessionState = local . setval "SessionState"
 
--- |Will 'fail' when @SessionState@@ is not set.
+-- |Will 'fail' when @SessionState@ is not set.
 
 getSessionState :: Smtpd SessionState
 getSessionState = local $ withval "SessionState" $ maybe Unknown id
