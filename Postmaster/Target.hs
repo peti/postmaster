@@ -46,8 +46,8 @@ shell mbox cmd = pipe mbox "/bin/sh" [ "-c", cmd']
   toText = "sed -e 's/\r$//' -e 's/^\\.\\.$/./'"
 
 -- |Create a 'Relay' target and 'addRcptTo' it. Currently,
--- this just causes execution of 'sendmailPath'. with
--- appropriate flags.
+-- this just causes execution of @\/usr\/sbin\/sendmail@
+-- with appropriate flags.
 
 relay :: [Mailbox] -> Smtpd SmtpReply
 relay rs = do

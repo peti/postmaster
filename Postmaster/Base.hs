@@ -33,8 +33,8 @@ type Smtpd a    = RWST GlobalEnv [LogMsg] SmtpdState IO a
 
 -- |@say a b c msg = return ('reply' a b c [msg])@
 --
--- The 'SmtpReply' codes 'eventHandler' and 'dataHandler'
--- return determine what Postmaster will do:
+-- The 'SmtpReply' codes returned the event handler returns
+-- determine what Postmaster will do:
 --
 -- [@1xx@, @2xx@, @3xx@] make the 'SessionState' transition
 -- determined determined by 'smtpdFSM'.
@@ -43,9 +43,9 @@ type Smtpd a    = RWST GlobalEnv [LogMsg] SmtpdState IO a
 --
 -- [@221@, @421@] Drop the connection after this reply.
 --
--- Furthermore, the reply of the 'Greeting' event (the first
--- event triggered when a session starts up) is interpreted
--- as follows: @2xx@ accepts the connection, everything else
+-- The reply for the 'Greeting' event (the first event
+-- triggered when a session starts up) is interpreted as
+-- follows: @2xx@ accepts the connection, everything else
 -- refuses the connection.
 
 say :: Int -> Int -> Int -> String -> Smtpd SmtpReply

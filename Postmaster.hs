@@ -10,10 +10,7 @@
 
    The Postmaster ESMTP Server. See
    <http://postmaster.cryp.to/docs/tutorial.html> for an
-   introduction. Note that you should /not/ modify this
-   module. In theory, you should be able to achieve any
-   effect you like through modifying the contents of
-   'Config'. If there is something that appears to be
+   introduction. If there is something that appears to be
    impossible to do without modifying the core modules,
    please complain loudly to <mailto:postmaster-dev@lists.cryp.to>.
  -}
