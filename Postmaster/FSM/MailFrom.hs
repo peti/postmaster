@@ -1,4 +1,3 @@
-{-# OPTIONS -fth #-}
 {- |
    Module      :  Postmaster.FSM.MailFrom
    Copyright   :  (c) 2005-02-10 by Peter Simons
@@ -12,20 +11,22 @@
 module Postmaster.FSM.MailFrom where
 
 import Postmaster.Base
-import Postmaster.Meta
 import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
-$( defineLocalVar "MailFrom" [t| Mailbox |]
-     [ (showString "get", [| maybe nullPath id |])
-     ]
- )
+-- |Local Variable: @MAILFROM :: 'Mailbox'@
+
+mailFrom :: SmtpdVariable
+mailFrom = defineLocal "mailfrom"
 
 handleMailFrom :: EventT
 handleMailFrom f e = do
   r <- f e
   case (e, isSuccess r) of
-    (SetMailFrom x, True) -> setMailFrom x
-    (ResetState, _)       -> unsetMailFrom
+    (SetMailFrom x, True) -> mailFrom (`setVar` x)
+    (ResetState, _)       -> mailFrom unsetVar
     (_, _)                -> return ()
   return r
+
+getMailFrom :: Smtpd Mailbox
+getMailFrom = mailFrom getVar_
