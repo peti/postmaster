@@ -50,23 +50,13 @@ with this::
 > module Main where
 >
 > import System.IO
-> import System.Time
 > import System.Process
 > import System.Exit
+> import System.Time
 > import System.Posix.User
-> import Foreign.Marshal.Array
-> import Network
-> import Network.Socket
-> import Data.Typeable
+> import Foreign.Marshal.Array ( withArray )
 > import Data.Char
 > import Data.List
-> import Control.Monad.RWS hiding ( local )
-> -- import Text.ParserCombinators.Parsec
-> -- import Text.ParserCombinators.Parsec.Error
-> import Network.DNS
-> import Rfc2821 hiding ( path )
-> import Syslog
-> import MonadEnv
 > import Postmaster
 
 The Postmaster daemon needs two things before it can run: A
