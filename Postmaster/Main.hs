@@ -113,7 +113,7 @@ withGlobalEnv :: HostName           -- ^ 'myHeloName'
               -> (GlobalEnv -> IO a)
               -> IO a
 withGlobalEnv myHelo dns eventT f = do
-  let eventH  = eventT (mkEvent myHelo)
+  let eventH  = eventT (mkEvent myHelo "/tmp/test-spool")
       initEnv = do setDNSResolver dns
                    setEventHandler eventH
   newMVar (execState initEnv emptyEnv) >>= f

@@ -40,17 +40,19 @@ import Postmaster.FSM.SessionState
 import Postmaster.FSM.Spooler
 import Rfc2821
 
--- |Generate the standard ESMTP event handler.
+-- |Generate the standard ESMTP event handler. The
+-- parameters are the path to the spool directory and our
+-- @HELO@ name.
 
-mkEvent :: HostName -> EventHandler
-mkEvent heloname
+mkEvent :: FilePath -> HostName -> EventHandler
+mkEvent spooldir heloname
   = announce "PIPELINING"
   . initHeloName heloname
   . handleMailID
   . handleMailFrom
   . handleEhloPeer
   . handlePeerHelo
-  . handlePayload "/tmp/test-spool"
+  . handlePayload spooldir
   $ event
 
 -- |The Standard Bad-Ass Event Handler

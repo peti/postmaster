@@ -58,18 +58,18 @@ handlePayload spool _ StartData =
      sha1Engine (`setval` sha1)
      setDataHandler (feeder h)
      say 3 5 4 "terminate data with <CRLF>.<CRLF>"
-  `fallback` do
+  `fallback`
      say 4 5 1 "requested action aborted: error in processing"
 
 handlePayload spool _ Deliver =
   do spoolHandle getval_ >>= liftIO . hClose >> spoolHandle unsetval
-     fname <- spoolName getval_
      ctx <- sha1Engine getval_
      sha1 <- fmap (>>= toHex) (liftIO (evalStateT final ctx))
+     fname <- spoolName getval_
      let fname' = spool ++ "/" ++ sha1
      liftIO (renameFile fname fname')
      say 2 5 0 (sha1 ++ " message accepted for delivery")
-  `fallback` do
+  `fallback`
      say 4 5 1 "requested action aborted: error in processing"
 
 handlePayload _ f ResetState = cleanupSpool >> f ResetState
