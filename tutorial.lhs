@@ -61,8 +61,6 @@ with this::
 > import Data.Char
 > import Data.List
 > import Control.Monad.RWS hiding ( local )
-> -- import Text.ParserCombinators.Parsec
-> -- import Text.ParserCombinators.Parsec.Error
 > import Network.DNS
 > import Rfc2821 hiding ( path )
 > import Syslog
@@ -655,85 +653,6 @@ computations in the ``Smtpd`` monad::
   local  :: EnvT a -> Smtpd a
   global :: EnvT a -> Smtpd a
 
-Configuring At Run-Time
-'''''''''''''''''''''''
-
-::
-
-> data UserConf = UserTarget Mailbox UserTarget
-
-> data UserTarget = Forward
->                 | Shell String
->                 | User String
->                 | Rewrite Mailbox
->                 | Explode [UserTarget]
-
-> compile :: UserTarget -> (Mailbox -> Smtpd SmtpReply)
-
-> compile Forward mb      = relay [mb]
-> compile (Shell cmd) mb  = shell [mb] cmd
-> compile (User uid) mb   = localMailer mb uid
-> compile (Rewrite mb) _  = trigger eventHandler (AddRcptTo mb)
-> compile (Explode ts) mb = do
->   rs <- mapM (\t -> compile t mb) ts
->   let good (Reply (Code Success _ _) _) = True
->       good _                            = False
->       anyGood = any good rs
->       bad (Reply (Code PermanentFailure _ _) _) = True
->       bad _                                     = False
->       allBad = all bad rs
->   case (anyGood, allBad) of
->     (True ,   _  ) -> say 2 5 0 (mb `shows` " recipient ok")
->     (False, False) -> say 4 5 1 (mb `shows` " mailbox unavailable")
->     (  _  , True ) -> say 5 5 4 (mb `shows` " recipient unknown")
-
-> localMailer :: Mailbox -> String -> Smtpd SmtpReply
-> localMailer mb uid = procmail [mb] uid []
-
-> localDomain :: HostName -> [(String, UserTarget)] -> [UserConf]
-> localDomain host =
->   map (\(uid,t) -> UserTarget (Mailbox [] uid host) t)
-
-
-* Import the POSIX env into ours using clever naming
-  conventions.
-
-* Do I even need ``compile``?
-
-Experimental
-''''''''''''
-::
-
-> local_host_names :: [String]
-> local_host_names =
->   [ "ahlgrimm.info"
->   , "peti.cryp.to"
->   , "cryp.to"
->   , "evildoer.de"
->   , "klaebe.net"
->   , "babel.de"
->   , "eilebrecht.net"
->   , "babel.org"
->   , "polizei.net"
->   , "eilebrecht.us"
->   , "eilebrecht.biz"
->   , "babylon.pfm-mainz.de"
->   , "eilebrecht.org"
->   , "lists.cryp.to"
->   , "evil-doer.de"
->   , "petix.cryp.to"
->   , "eilebrecht.info"
->   , "content-management.info"
->   , "berlininfo.info"
->   , "delf.nl"
->   ]
-
-> peti :: EventT
-> peti = badass . localHosts local_host_names . relayAll
->   where
->   relayAll _ (AddRcptTo mbox) = relay [mbox]
->   relayAll f e                = f e
-
 A Bad-Ass MTA
 -------------
 
@@ -965,7 +884,7 @@ Notes
 Change me::
 
 > main :: IO ()
-> main = main' (eventT peti)
+> main = main' (eventT stdConfig)
 
 References
 ----------
