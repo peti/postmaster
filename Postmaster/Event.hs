@@ -39,7 +39,7 @@ type EventT = (Event -> Smtpd SmtpReply)
 
 -- |Generate the standard ESMTP event handler.
 
-mkEvent :: String -> Event -> Smtpd SmtpReply
+mkEvent :: HostName -> Event -> Smtpd SmtpReply
 mkEvent heloName
   = announce "PIPELINING"
   . setHeloName heloName
@@ -56,7 +56,7 @@ mkEvent heloName
 setSessionState :: SessionState -> Smtpd ()
 setSessionState = local . setval "SessionState"
 
--- |Will 'fail' when @SessionState@@ is not set.
+-- |Will 'fail' when @SessionState@ is not set.
 
 getSessionState :: Smtpd SessionState
 getSessionState = local $ withval "SessionState" $ maybe Unknown id

@@ -16,7 +16,7 @@ import Rfc2821 hiding ( path )
 import Postmaster.Base
 import Postmaster.Event
 
--- |Create 'Pipe' target and add it to 'rcptTo'. The mailbox
+-- |Create 'Pipe' target and 'addRcptTo' it. The mailbox
 -- parameter is just annotation; but it's a good idea to use
 -- it to associate the original e-mail address with the
 -- target. If nothing else, it makes the log messages more
@@ -45,9 +45,9 @@ shell mbox cmd = pipe mbox "/bin/sh" [ "-c", cmd']
   cmd'   = toText ++ " | " ++ cmd
   toText = "sed -e 's/\r$//' -e 's/^\\.\\.$/./'"
 
--- |Create a 'Relay' target and add it to 'rcptTo'.
--- Currently, this just causes execution of 'sendmailPath'.
--- with appropriate flags.
+-- |Create a 'Relay' target and 'addRcptTo' it. Currently,
+-- this just causes execution of 'sendmailPath'. with
+-- appropriate flags.
 
 relay :: [Mailbox] -> Smtpd SmtpReply
 relay rs = do

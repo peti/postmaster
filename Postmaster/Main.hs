@@ -58,8 +58,7 @@ withConfig cfg f = do
 -- 'listenOn' the given port for incoming connections. When
 -- a connection comes in, set the new 'Handle' into
 -- 'BlockBuffering' mode using 'ioBufferSize' to determine
--- the size of the buffer. Next, generate a unique 'ID' and
--- store it in 'sessionID'. At last, fork off 'runSmtpd' to
+-- the size of the buffer. At last, fork off 'runSmtpd' to
 -- handle the connection and go back to listening.
 
 smtpdMain :: (Config -> Config) -> PortID -> IO ()
@@ -126,11 +125,12 @@ runSmtpd bufSize hIn hOut cfg = do
 -- |Run 'handleData' if the session is in 'HaveData' state,
 -- run 'handleDialog' otherwise. Recurse until the entire
 -- buffer has been processed. The replies returned by the
--- handers are written to 'hOut'. The stream is flushed when
--- the recursion ends, so for optimal performance the
--- 'Handle' should be in 'BlockBuffering' mode. If the
--- 'eventHandler' (or the 'dataHandler') returns 221 or 421,
--- drop the connection after writing the reply.
+-- handers are written to the given 'Handle'. The stream is
+-- flushed when the recursion ends, so for optimal
+-- performance the 'Handle' should be in 'BlockBuffering'
+-- mode. If the 'eventHandler' (or the 'dataHandler')
+-- returns 221 or 421, drop the connection after writing the
+-- reply.
 
 smtpdHandler :: Handle -> Config -> LoopHandler SmtpdState
 smtpdHandler hOut cfg (ptr,n) = do
@@ -186,7 +186,7 @@ handleData (ptr,n) = do
 
 -- |If there is one, consume the first line from the buffer
 -- and run it through 'smtpdFSM'. Then trigger the 'Event'
--- the machine returns and make the 'sessionState'
+-- the machine returns and make the 'SessionState'
 -- transition accordingly if the event handler returns
 -- \"success\" (meaning: 1xx, 2xx, 3xx).
 

@@ -36,7 +36,7 @@ type Smtpd a = RWST Config [LogMsg] SmtpdState IO a
 -- The 'SmtpReply' codes 'eventHandler' and 'dataHandler'
 -- return determine what Postmaster will do:
 --
--- [@1xx@, @2xx@, @3xx@] make the 'sessionState' transition
+-- [@1xx@, @2xx@, @3xx@] make the 'SessionState' transition
 -- determined determined by 'smtpdFSM'.
 --
 -- [@4xx@, @5xx@] Do /not/ make the transition.
@@ -61,45 +61,44 @@ trigger f x = asks (f . callbacks) >>= \f' -> f' x
 
 data Callbacks = CB
   { eventHandler :: Event -> Smtpd SmtpReply
-        -- ^ The event handler is called by 'handleDialog'
-        -- every time new \"@\\r\\n@\"-terminated input is
-        -- available. The event to trigger is determined by
-        -- 'smtpdFSM'.
+        -- ^ The event handler is called by
+        -- 'Postmaster.Main.handleDialog' every time new
+        -- \"@\\r\\n@\"-terminated input is available. The
+        -- event to trigger is determined by 'smtpdFSM'.
   , dataHandler  :: (Ptr Word8, Int) -> Smtpd ()
-        -- ^ Better stay away from this for the time
-        -- being. Your data handler of choice is 'feed'.
+        -- ^ Better stay away from this for the time being.
+        -- Your data handler of choice is
+        -- 'Postmaster.Event.feed'.
   , logStream    :: LogMsg -> IO ()
         -- ^ 'Smtpd' is a 'MonadWriter', but at some point
         -- the (lazily!) accumulated log messages have to go
         -- somewhere. Here you can determine where they go
         -- (or won't go). It's probably best to use
-        -- 'syslogger'.
+        -- 'Postmaster.Main.syslogger'.
   , queryDNS     :: Resolver
         -- ^ Postmaster uses this call-back to access the
         -- domain name service. Initialize with
         -- 'initResolver'.
   }
 
--- |Use 'mkConfig' to create a 'Config' record with all
--- values initialized to sensible defaults. You may want to
--- change the 'myHeloName', though, which is the result of
--- 'getHostName' per default. That might not be what you
--- want.
+-- |Use 'Postmaster.Main.mkConfig' to create a 'Config'
+-- record with all values initialized to sensible defaults.
 
 data Config = Config
   { callbacks    :: Callbacks
   , globalEnv    :: MVar Env
         -- ^ A global environment for the entire daemon.
-        -- Initialized to 'emptyFM' by 'withConfig'.
+        -- Initialized to 'emptyEnv' by 'Postmaster.Main.withConfig'.
   , sendmailPath :: FilePath
         -- ^ Usually: @\/usr\/sbin\/sendmail@. Expect this
         -- entry to be renamed or to change completely in
         -- the future.
-  , peerAddr     :: Maybe SockAddr  -- ^ set by 'smtpdMain'
+  , peerAddr     :: Maybe SockAddr
+        -- ^ set by 'Postmaster.Main.smtpdMain'
   }
   deriving (Show)
 
--- |Generated with @'fmap' 'hashUnique' 'newUnique'@.
+-- |Our identifier type.
 
 type ID = Int
 
@@ -113,7 +112,7 @@ data SmtpdState = SmtpdState
         -- initial value in the 'Greeting' event, though. If
         -- a timeout occurs, the session aborts with an
         -- exception (which is caught and logged by
-        -- 'runSmtpd').
+        -- 'Postmaster.Main.runSmtpd').
   , writeTimeout :: Timeout
         -- ^ Like 'readTimeout', but for outbound I\/O.
         -- Timeouts are specified in microseconds (@1\/10^6@
@@ -125,22 +124,7 @@ data SmtpdState = SmtpdState
   }
   deriving (Show)
 
--- |Used by 'smtpdMain' and in the 'ResetState' event, where
--- 'mailFrom', 'rcptTo', and 'mailID' are reset to initial
--- values. The defaults are:
---
--- > initSmtpd = SmtpdState
--- >   { sessionState = Unknown
--- >   , ioBufferGap  = 0
--- >   , readTimeout  = 90*1000000
--- >   , writeTimeout = 90*1000000
--- >   , peerHelo     = ""
--- >   , isEhloPeer   = False
--- >   , mailFrom     = nullPath
--- >   , mailID       = 0
--- >   , rcptTo       = []
--- >   , localEnv     = emptyFM
--- >   }
+-- |Used by 'Postmaster.Main.smtpdMain'.
 
 initSmtpd :: SmtpdState
 initSmtpd = SmtpdState
