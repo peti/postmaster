@@ -39,7 +39,7 @@ listener p h = bracket (listenOn p) (sClose) (acceptor h)
 
 -- |Given a listening socket, this function will loop
 -- forever 'accept'ing incoming connections. For each
--- connection a 'SocketHandler' thread is 'forkIO''d.
+-- connection a 'SocketHandler' thread is forked.
 
 acceptor :: SocketHandler -> Socket -> IO ()
 acceptor h ls = do
