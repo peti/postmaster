@@ -22,7 +22,7 @@ import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
 import System.IO
 import System.Posix.Signals
-import Network ( listenOn, PortID(..) )
+import Network ( PortID(..) )
 import Network.Socket
 import Network.BSD ( getHostName )
 import Network.DNS
@@ -33,8 +33,117 @@ import Postmaster.IO
 import Rfc2821
 import Syslog
 import BlockIO
-import Child
 import MonadEnv
+
+-- * Speaking ESMTP
+
+smtpdHandler :: WriteHandle -> GlobalEnv -> BlockHandler SmtpdState
+smtpdHandler hOut theEnv buf = runSmtpd (smtpd hOut buf) theEnv
+
+-- |/NOTE:/ This function relies on the fact that @DATA@
+-- commands end pipelining: single buffer must /not/ contain
+-- dialog and payload. See
+-- <http://www.faqs.org/rfcs/rfc2920.html> section 3.1.
+
+smtpd :: WriteHandle -> Buffer -> Smtpd Buffer
+smtpd hOut buf@(Buf _ ptr n) = do
+  sst <- getSessionState
+  (rs, buf') <- if (sst == HaveData)
+      then do (r, buf') <- handleData buf
+              return (maybeToList r, buf')
+      else do xs <- liftIO (peekArray (fromIntegral n) ptr)
+              let xs'  = map (toEnum . fromEnum) xs
+                  ls'  = splitList "\r\n" xs'
+                  ls   = reverse . tail $ reverse ls'
+                  rest = head $ reverse ls'
+                  i    = length xs - length rest
+              rs <- mapM handleDialog ls
+              buf' <- liftIO $ flush (fromIntegral i) buf
+              return (rs, buf')
+  safeWrite (hPutStr hOut (concatMap show rs) >> hFlush hOut)
+  let term (Reply (Code Success Connection 1) _)          = True
+      term (Reply (Code TransientFailure Connection 1) _) = True
+      term _                                              = False
+  when (any term rs) (fail "shutdown")
+  return buf'
+
+handleData :: Buffer -> Smtpd (Maybe SmtpReply, Buffer)
+handleData buf@(Buf _ ptr n) = do
+  xs <- liftIO (peekArray (fromIntegral n) ptr)
+  let eod = map (toEnum . fromEnum) "\r\n.\r\n"
+  case strstr eod xs of
+    Nothing -> do let n' = max 0 (n - 4)
+                  feed (ptr, fromIntegral n')
+                  buf' <- liftIO $ flush n' buf
+                  return (Nothing, buf')
+    Just i  -> do feed (ptr, (i-3))
+                  r <- trigger Deliver
+                  trigger ResetState
+                  setSessionState HaveHelo
+                  buf' <- liftIO $ flush (fromIntegral i) buf
+                  return (Just r, buf')
+
+handleDialog :: String -> Smtpd SmtpReply
+handleDialog line' = do
+  let line = fixCRLF line'
+  sst <- getSessionState
+  let (e,sst') = runState (smtpdFSM line) sst
+  r <- trigger e
+  case r of
+    Reply (Code Unused0 _ _) _          -> fail "Unused?"
+    Reply (Code TransientFailure _ _) _ -> return ()
+    Reply (Code PermanentFailure _ _) _ -> return ()
+    _                                   -> setSessionState sst'
+  return r
+
+
+-- * ESMTP Network Daemon
+
+smtpdServer :: Capacity -> GlobalEnv -> SocketHandler
+smtpdServer cap theEnv =
+  handleLazy ReadWriteMode $ \(h, Just sa) -> do
+    hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
+    let st = execState (setval "PeerAddr" (PeerAddr sa)) emptyEnv
+    smtpdMain cap theEnv h h st
+
+smtpdMain :: Capacity
+          -> GlobalEnv
+          -> ReadHandle
+          -> WriteHandle
+          -> SmtpdState
+          -> IO ()
+smtpdMain cap theEnv hIn hOut initST = do
+  let greet = do r <- trigger Greeting
+                 safeReply hOut r >> safeFlush hOut
+                 to <- getReadTimeout
+                 sid <- mySessionID
+                 return (r, to, sid)
+  ((r, to, sid), st) <- runSmtpd greet theEnv initST
+  let Reply (Code rc _ _) _ = r
+  when (rc == Success) $ do
+    let getTO  = evalState (getDefault "ReadTimeout" to)
+        yellIO = syslogger . LogMsg sid st
+        hMain  = smtpdHandler hOut theEnv
+    catch
+      (runLoopNB getTO hIn cap hMain st >> return ())
+      (\e -> case e of
+         IOException ie -> yellIO (CaughtIOError ie)
+         _              -> yellIO (CaughtException e))
+
+main' :: Capacity -> PortID -> EventT -> IO ()
+main' cap port eventT = do
+  installHandler sigPIPE Ignore Nothing
+  installHandler sigCHLD (Catch (return ())) Nothing
+  whoami <- getHostName
+  withSocketsDo $
+    withSyslog "postmaster" [PID, PERROR] MAIL $
+      initResolver [NoErrPrint,NoServerWarn] $ \dns ->
+        withGlobalEnv whoami dns eventT $
+          listener port . smtpdServer cap
+
+main :: IO ()
+main = main' 1024 (PortNumber 2525) id
+
 
 -- * Running 'Smtpd' Computations
 
@@ -91,114 +200,8 @@ syslogger :: Logger
 syslogger (LogMsg sid _ e) = syslog Info $
   showString "SID " . shows sid . (':':) . (' ':) $ show e
 
--- * The ESMTP Server
 
-smtpd :: WriteHandle -> Buffer -> Smtpd Buffer
-smtpd hOut buf@(Buf _ ptr n) = do
-  sst <- getSessionState
-  (rs, buf') <- if (sst == HaveData)
-      then do (r, buf') <- handleData buf
-              return (maybeToList r, buf')
-      else do xs <- liftIO (peekArray (fromIntegral n) ptr)
-              let xs'  = map (toEnum . fromEnum) xs
-                  ls'  = splitList "\r\n" xs'
-                  ls   = reverse . tail $ reverse ls'
-                  rest = head $ reverse ls'
-                  i    = length xs - length rest
-              rs <- mapM handleDialog ls
-              buf' <- liftIO $ flush (fromIntegral i) buf
-              return (rs, buf')
-  safeWrite (hPutStr hOut (concatMap show rs) >> hFlush hOut)
-  let term (Reply (Code Success Connection 1) _)          = True
-      term (Reply (Code TransientFailure Connection 1) _) = True
-      term _                                              = False
-  when (any term rs) (fail "shutdown")
-  return buf'
-
-handleData :: Buffer -> Smtpd (Maybe SmtpReply, Buffer)
-handleData buf@(Buf _ ptr n) = do
-  xs <- liftIO (peekArray (fromIntegral n) ptr)
-  let eod = map (toEnum . fromEnum) "\r\n.\r\n"
-  case strstr eod xs of
-    Nothing -> do let n' = max 0 (n - 4)
-                  feed (ptr, fromIntegral n')
-                  buf' <- liftIO $ flush n' buf
-                  return (Nothing, buf')
-    Just i  -> do feed (ptr, (i-3))
-                  r <- trigger Deliver
-                  trigger ResetState
-                  setSessionState HaveHelo
-                  buf' <- liftIO $ flush (fromIntegral i) buf
-                  return (Just r, buf')
-
-handleDialog :: String -> Smtpd SmtpReply
-handleDialog line' = do
-  let line = fixCRLF line'
-  sst <- getSessionState
-  let (e,sst') = runState (smtpdFSM line) sst
-  r <- trigger e
-  case r of
-    Reply (Code Unused0 _ _) _          -> fail "Unused?"
-    Reply (Code TransientFailure _ _) _ -> return ()
-    Reply (Code PermanentFailure _ _) _ -> return ()
-    _                                   -> setSessionState sst'
-  return r
-
--- * ESMTP Network Daemon
-
-smtpdHandler :: WriteHandle -> GlobalEnv -> BlockHandler SmtpdState
-smtpdHandler hOut theEnv buf = runSmtpd (smtpd hOut buf) theEnv
-
-smtpdMain :: Capacity
-          -> ReadHandle
-          -> WriteHandle
-          -> GlobalEnv
-          -> SmtpdState
-          -> IO ()
-smtpdMain cap hIn hOut theEnv initST = do
-  let greet = do r <- trigger Greeting
-                 safeReply hOut r >> safeFlush hOut
-                 to <- getReadTimeout
-                 sid <- mySessionID
-                 return (r, to, sid)
-  ((r, to, sid), st) <- runSmtpd greet theEnv initST
-  let Reply (Code rc _ _) _ = r
-  when (rc == Success) $ do
-    let getTO  = evalState (getDefault "ReadTimeout" to)
-        yellIO = syslogger . LogMsg sid st
-        hMain  = smtpdHandler hOut theEnv
-    catch
-      (runLoopNB getTO hIn cap hMain st >> return ())
-      (\e -> case e of
-         IOException ie -> yellIO (CaughtIOError ie)
-         _              -> yellIO (CaughtException e))
-
-main' :: Capacity -> PortID -> EventT -> IO ()
-main' cap port eventT = do
-  installHandler sigPIPE Ignore Nothing
-  installHandler sigCHLD (Catch (return ())) Nothing
-  whoami <- getHostName
-  withSocketsDo $
-    withSyslog "postmaster" [PID, PERROR] MAIL $
-      initResolver [NoErrPrint,NoServerWarn] $ \dns ->
-        withGlobalEnv whoami dns eventT $ \theEnv ->
-        bracket (listenOn port) (sClose) $ \s -> do
-          setSocketOption s ReuseAddr 1
-          loop theEnv s
-  where
-  loop theEnv ls = do
-    (s, sa) <- accept ls
-    spawn (server theEnv (s,sa) `finally` sClose s)
-    loop theEnv ls
-  server theEnv (s,sa) = do
-    setSocketOption s KeepAlive 1
-    h <- socketToHandle s ReadWriteMode
-    hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
-    let st = execState (setval "PeerAddr" (PeerAddr sa)) emptyEnv
-    smtpdMain cap h h theEnv st `finally` hClose h
-
-main :: IO ()
-main = main' 1024 (PortNumber 2525) id
+-- * Local Variable: @PeerAddr@
 
 data PeerAddr = PeerAddr SockAddr
               deriving (Typeable, Show)
