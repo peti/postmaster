@@ -4,7 +4,7 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O0 -Wall \
+HFLAGS	 := -threaded -O -Wall \
             -idns -iemail -iblockio -ichild -ihopenssl \
 	    -imonadenv -isyslog '-\#include <adns.h>' \
 	    '-\#include <sys/poll.h>' \
