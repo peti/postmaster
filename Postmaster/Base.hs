@@ -157,7 +157,7 @@ fallback f g = do
 -- * Resource Management
 
 -- |Convert 'bracket'-style resource management to
--- allocate/free style. We need this, because we have to
+-- allocate\/free style. We need this, because we have to
 -- acquire resources that leave the scope in which they were
 -- allocated. Yeah, callback-driven I\/O does that to
 -- functional programs. Anyway, the resource will be /gone/
