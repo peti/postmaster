@@ -136,7 +136,7 @@ distclean::	clean
 	@rm -rf $(MONODIRS)
 
 redate::
-	redate $(SRCS) tutorial.lhs README
+	redate Postmaster.hs Postmaster/*.hs Postmaster/*/*.hs tutorial.lhs README
 
 init-src::	$(MONODIRS) $(SRCS)
 	@-mkdir $(DOCDIR)
