@@ -1,7 +1,7 @@
 {-# OPTIONS -fth -ddump-splices #-}
 {- |
    Module      :  Postmaster.Meta
-   Copyright   :  (c) 2005-02-12 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
