@@ -4,11 +4,15 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O -Wall \
-            -idns -iemail -iblockio -ichild -ihopenssl \
-	    -imonadenv -isyslog '-\#include <adns.h>' \
-	    '-\#include <sys/poll.h>' '-\#include <openssl/evp.h>' \
-	    -odir $(OBJDIR) -hidir $(OBJDIR)
+HFLAGS	 := -threaded -Wall -O2 -funbox-strict-fields 	\
+	    -odir $(OBJDIR) -hidir $(OBJDIR) 		\
+	    -ignore-package blockio  -iblockio		\
+	    -ignore-package child    -ichild		\
+	    -ignore-package hsdns    -idns  '-\#include <adns.h>' '-\#include <sys/poll.h>' \
+	    -ignore-package hsemail  -iemail		\
+	    -ignore-package monadenv -imonadenv		\
+	    -ihopenssl '-\#include <openssl/evp.h>' 	\
+	    -isyslog
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
@@ -59,7 +63,7 @@ SRCS := Postmaster.hs				\
 	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
 	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
 	hopenssl/Digest.hs			\
-	monadenv/MonadEnv.hs			\
+	monadenv/Control/Monad/Env.hs			\
 	syslog/Syslog.hs
 
 all::	postmaster
