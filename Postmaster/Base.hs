@@ -18,7 +18,7 @@ import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
 import Control.Monad.Env
-import Control.Concurrent.MVar
+import Control.Concurrent
 import System.IO.Driver
 import Data.Typeable
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
@@ -57,7 +57,6 @@ global f = do
   liftIO . modifyMVar mv $ return . swap . runState f
     where swap (a,e) = (e,a)
 
-
 local :: EnvT a -> Smtpd a
 local f = do
   (a, st) <- gets (runState f)
@@ -72,14 +71,16 @@ defineLocal n = \f -> local (f (mkVar n))
 defineGlobal :: String -> SmtpdVariable
 defineGlobal n = \f -> global (f (mkVar n))
 
+-- ** Generating Unique Identifiers.
+
 type ID = Int
 
--- |Produce a unique 'ID' using a global counter.
+-- |Produce an unique 'ID' using a global counter.
 
 getUniqueID :: Smtpd ID
 getUniqueID = global $ tick (mkVar "UniqueID")
 
--- |Provides a unique 'ID' for this session.
+-- |Provides an unique 'ID' for every (TCP) session.
 
 mySessionID :: Smtpd ID
 mySessionID = do
@@ -88,7 +89,7 @@ mySessionID = do
   case sid' of
     Just sid -> return sid
     _        -> do sid <- getUniqueID
-                   local (setVar key sid)
+                   local $ setVar key sid
                    return sid
 
 -- ** Event Handler
@@ -101,6 +102,7 @@ type EventT  = EventHandler -> EventHandler
 
 type DataHandler = Buffer -> Smtpd (Maybe SmtpReply, Buffer)
 
+-- ** Logging
 
 data LogMsg = LogMsg ID SmtpdState LogEvent
             deriving (Show)
@@ -151,3 +153,29 @@ fallback f g = do
   tell w
   put st'
   return r
+
+-- * Resource Management
+
+-- |Convert 'bracket'-style resource management to
+-- allocate/free style. We need this, because we have to
+-- acquire resources that leave the scope in which they were
+-- allocated. Yeah, callback-driven I\/O does that to
+-- functional programs. Anyway, the resource will be /gone/
+-- once you empty the 'MVar' (or when it falls out of
+-- scope). So use only 'withMVar' and friends to access the
+-- value.
+
+acquire :: ((a -> IO b) -> IO b) -> IO (MVar a)
+acquire f = do
+  sync <- newEmptyMVar
+  let hold r = do putMVar sync r
+                  yield
+                  putMVar sync r
+                  return undefined
+  forkIO (f hold >> return ())
+  return sync
+
+-- |Let go of a resource allocated with 'acquire'.
+
+release :: MVar a -> IO ()
+release a = takeMVar a >> yield >> return ()
