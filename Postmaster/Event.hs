@@ -12,11 +12,17 @@
 module Postmaster.Event where
 
 import Prelude hiding ( catch )
-import Control.Monad.RWS hiding ( local )
+-- import Foreign
 import Network ( HostName )
+-- import Control.Concurrent.MVar
+import Control.Monad.RWS hiding ( local )
+-- import Data.Typeable
+-- import Data.Word
 import Postmaster.Base
 import Rfc2821 hiding ( path )
 import MonadEnv
+-- import Digest
+-- import BlockIO
 
 ----------------------------------------------------------------------
 -- * Event Handlers
@@ -128,6 +134,7 @@ setMailID f e = do
 getMailID :: Smtpd ID
 getMailID = local $ getval_ (mkVar "MailID")
 
+
 -- ** Combinator: Announce ESMTP Capability
 
 -- |Append the given ESMTP keyword to the reply produced
@@ -204,4 +211,24 @@ event (AddRcptTo mbox) =
   say 5 5 3 (mbox `shows` " ... unknown recipient")
 
 event StartData = event NotImplemened
+
 event Deliver   = event NotImplemened
+
+
+----------------------------------------------------------------------
+-- * The Standard Bad-Ass Payload Handler
+----------------------------------------------------------------------
+
+-- |We deliver everything from spool. Payload will be
+-- written into a temporary file in the spool, an SHA1 hash
+-- is calculated over the contents as we read\/write it.
+-- When the data section ends, we rename the temporary file
+-- to its hash.
+
+-- newtype MailID = MailID [Word8]
+--   deriving (Eq, Ord, Typeable)
+--
+-- instance Show MailID where
+--   showsPrec _ (MailID ws) = showString (ws >>= toHex)
+--
+-- type DirPath = FilePath

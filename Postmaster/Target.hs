@@ -27,6 +27,7 @@ import Postmaster.Event
 import Rfc2821 hiding ( path )
 import Child ( timeout )
 import MonadEnv
+-- import BlockIO
 
 -- * Mail Targets
 
@@ -140,6 +141,47 @@ safeWaitForProcess pid =
 -- * Standard Data Handler
 ----------------------------------------------------------------------
 
+-- type DataHandler = Buffer -> Smtpd (Maybe SmtpReply, Buffer)
+--
+-- newtype DH = DH DataHandler   deriving (Typeable)
+--
+-- -- ** |Local Variable: @DataHandler@
+--
+-- setDataHandler :: DataHandler -> Smtpd ()
+-- setDataHandler f = local (setval key (DH f))
+--   where key = mkVar "DataHandler"
+--
+-- myDataHandler :: Smtpd DataHandler
+-- myDataHandler = local (getval_ key) >>= \(DH f) -> return f
+--   where key = mkVar "DataHandler"
+--
+-- feed :: DataHandler
+-- feed buf = myDataHandler >>= ($ buf)
+
+--  (Buf _ ptr n) = undefined
+
+-- handleData :: Buffer -> Smtpd (Maybe SmtpReply, Buffer)
+-- handleData buf@(Buf _ ptr n) = do
+--   xs <- liftIO (peekArray (fromIntegral n) ptr)
+--   let eod = map (toEnum . fromEnum) "\r\n.\r\n"
+--   case strstr eod xs of
+--     Nothing -> do let n' = max 0 (n - 4)
+--                   feed (ptr, fromIntegral n')
+--                   buf' <- liftIO $ flush n' buf
+--                   return (Nothing, buf')
+--     Just i  -> do feed (ptr, (i-3))
+--                   r <- trigger Deliver
+--                   trigger ResetState
+--                   setSessionState HaveHelo
+--                   buf' <- liftIO $ flush (fromIntegral i) buf
+--                   return (Just r, buf')
+--
+
+-- feed ( _ , 0) = return ()
+-- feed (ptr, n) = getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
+
+
+
 feedPayload :: EventT
 feedPayload _ StartData = do
   ts <- getRcptTo
@@ -169,10 +211,6 @@ feedPayload _ Deliver = do
     (  _  , True ) -> say 5 5 4 "transaction failed"
 
 feedPayload f e = f e
-
-feed ::(Ptr Word8, Int) -> Smtpd ()
-feed ( _ , 0) = return ()
-feed (ptr, n) = getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
 
 -- |Make a 'Ready' target 'Live'.
 

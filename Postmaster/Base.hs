@@ -19,6 +19,7 @@ import Control.Exception
 import Control.Monad.RWS hiding ( local )
 import Network.DNS
 import MonadEnv
+import BlockIO
 import Data.Typeable
 import Rfc2821 hiding ( path )
 
@@ -85,17 +86,36 @@ newtype EventHandler = EH (Event -> Smtpd SmtpReply)
 -- |If the @EventHandler@ variable is unset in the 'local'
 -- environment, the 'global' one will be used.
 
-getEventHandler :: Smtpd (Event -> Smtpd SmtpReply)
-getEventHandler = do
+myEventHandler :: Smtpd (Event -> Smtpd SmtpReply)
+myEventHandler = do
   let key = mkVar "EventHandler"
   EH f <- local (getval key)
       >>= maybe (global $ getval_ key) return
   return f
 
--- |Trigger the given event.
+-- |Trigger the given event. Exceptions will be caught and
+-- cause 'Shutdown' to be triggered.
 
 trigger :: Event -> Smtpd SmtpReply
-trigger e = getEventHandler >>= ($ e)
+trigger e = myEventHandler >>= ($ e)
+
+-- ** Data Handler
+
+type DataHandler = Buffer -> Smtpd (Maybe SmtpReply, Buffer)
+
+newtype DH = DH DataHandler   deriving (Typeable)
+
+setDataHandler :: DataHandler -> Smtpd ()
+setDataHandler f = local (setval key (DH f))
+  where key = mkVar "DataHandler"
+
+myDataHandler :: Smtpd DataHandler
+myDataHandler = local (getval_ key) >>= \(DH f) -> return f
+  where key = mkVar "DataHandler"
+
+feed :: DataHandler
+feed buf = myDataHandler >>= ($ buf)
+
 
 -- ** DNS Resolving
 

@@ -61,7 +61,7 @@ smtpd :: Buffer -> Smtpd ([SmtpReply], Buffer)
 smtpd buf@(Buf _ ptr n) = do
   sst <- getSessionState
   if (sst == HaveData)
-      then do (r, buf') <- handleData buf
+      then do (r, buf') <- feed buf
               return (maybeToList r, buf')
       else do xs <- liftIO (peekArray (fromIntegral n) ptr)
               let xs'  = map (toEnum . fromEnum) xs
@@ -72,22 +72,6 @@ smtpd buf@(Buf _ ptr n) = do
               rs <- mapM handleDialog ls
               buf' <- liftIO $ flush (fromIntegral i) buf
               return (rs, buf')
-
-handleData :: Buffer -> Smtpd (Maybe SmtpReply, Buffer)
-handleData buf@(Buf _ ptr n) = do
-  xs <- liftIO (peekArray (fromIntegral n) ptr)
-  let eod = map (toEnum . fromEnum) "\r\n.\r\n"
-  case strstr eod xs of
-    Nothing -> do let n' = max 0 (n - 4)
-                  feed (ptr, fromIntegral n')
-                  buf' <- liftIO $ flush n' buf
-                  return (Nothing, buf')
-    Just i  -> do feed (ptr, (i-3))
-                  r <- trigger Deliver
-                  trigger ResetState
-                  setSessionState HaveHelo
-                  buf' <- liftIO $ flush (fromIntegral i) buf
-                  return (Just r, buf')
 
 handleDialog :: String -> Smtpd SmtpReply
 handleDialog line = do
@@ -111,7 +95,7 @@ handleDialog line = do
 
 runSmtpd' :: Logger -> Smtpd a -> GlobalEnv -> SmtpdState
           -> IO (a, SmtpdState)
-runSmtpd' logger f = runStateT . withLogger logger f
+runSmtpd' logger f = runStateT . withLogger logger (safe f)
 
 -- |Convenience wrapper for 'runSmtpd'' with 'Logger'
 -- hard-coded to 'syslogger'.
@@ -148,6 +132,23 @@ mkEvent heloName
   . feedPayload
   $ event
 
+-- |'Shutdown' on a thrown exception. Internal function.
+
+safe :: Smtpd a -> Smtpd a
+safe f = do
+  cfg <- ask
+  st <- get
+  (r, st', w) <- liftIO (f' cfg st)
+  tell w
+  put st'
+  return r
+    where
+    f' cfg st = catch (runRWST f cfg st)
+                  (\e -> runRWST (goDown e) cfg st)
+    goDown e  = do sst <- getSessionState
+                   when (sst /= HaveQuit)
+                     (myEventHandler >>= ($ Shutdown) >> return ())
+                   return (throw e)
 
 -- * ESMTP Network Daemon
 
