@@ -44,8 +44,8 @@ import Rfc2821
 -- parameters are the path to the spool directory and our
 -- @HELO@ name.
 
-mkEvent :: FilePath -> HostName -> EventHandler
-mkEvent spooldir heloname
+mkEvent :: HostName -> FilePath -> EventHandler
+mkEvent heloname spooldir
   = announce "PIPELINING"
   . initHeloName heloname
   . handleMailID
