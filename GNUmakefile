@@ -28,8 +28,20 @@ MONODIRS := blockio child hopenssl monadenv syslog
 
 SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
-	Postmaster/Main.hs			\
+	Postmaster/FSM.hs			\
+	Postmaster/FSM/Announce.hs		\
+	Postmaster/FSM/DNSResolver.hs		\
+	Postmaster/FSM/DataHandler.hs		\
+	Postmaster/FSM/EhloPeer.hs		\
+	Postmaster/FSM/EventHandler.hs		\
+	Postmaster/FSM/HeloName.hs		\
+	Postmaster/FSM/MailFrom.hs		\
+	Postmaster/FSM/MailID.hs		\
+	Postmaster/FSM/PeerHelo.hs		\
+	Postmaster/FSM/SessionState.hs		\
+	Postmaster/FSM/Spooler.hs		\
 	Postmaster/IO.hs			\
+	Postmaster/Main.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
 	hopenssl/Digest.hs			\
