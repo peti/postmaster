@@ -5,8 +5,7 @@
 GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -O0 -Wall \
-            -iemail -iblockio -ichild -ihopenssl \
-	    -imonadenv -isyslog \
+            -iblockio -ihopenssl -imonadenv -isyslog -ichild \
 	    -odir $(OBJDIR) -hidir $(OBJDIR)
 DOCDIR	 := docs
 HADDOCK	 := haddock
@@ -20,7 +19,7 @@ HDIFILES := \
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := blockio child email hopenssl monadenv syslog
+MONODIRS := blockio child hopenssl monadenv syslog
 
 ##### build postmaster binary
 
@@ -29,16 +28,11 @@ MONODIRS := blockio child email hopenssl monadenv syslog
 SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
 	Postmaster/Event.hs			\
-	Postmaster/Extern.hs			\
-	Postmaster/FSM.hs			\
 	Postmaster/Main.hs			\
 	Postmaster/IO.hs			\
 	Postmaster/Target.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
-	email/Rfc2234.hs			\
-	email/Rfc2821.hs			\
-	email/Rfc2822.hs			\
 	hopenssl/Digest.hs			\
 	monadenv/MonadEnv.hs			\
 	syslog/Syslog.hs
