@@ -6,7 +6,8 @@ GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -debug -O -Wall \
             -idns -iemail -iblockio -ichild -ihopenssl \
-	    -imonadenv -isyslog \
+	    -imonadenv -isyslog '-\#include <adns.h>' \
+	    '-\#include <sys/poll.h>' \
 	    -odir $(OBJDIR) -hidir $(OBJDIR)
 DOCDIR	 := docs
 HADDOCK	 := haddock
@@ -109,7 +110,8 @@ index.html:	README
 
 clean::
 	@find . \( -name "*.hi" -o -name "*.o" \) -exec rm {} \;
-	@rm -f dns/ADNS.hs syslog/Syslog.hs
+	@rm -f dns/System/Posix/Poll.hs dns/System/Posix/GetTimeOfDay.hs
+	@rm -f dns/Network/DNS/ADNS.hs syslog/Syslog.hs
 	@rm -f postmaster TODO TAGS tags *.bak index.html
 
 distclean::	clean
