@@ -36,6 +36,9 @@ import MonadEnv
 
 -- * Speaking ESMTP
 
+-- |This function ties it all together to build a
+-- 'BlockHandler' for "BlockIO".
+
 smtpdHandler :: WriteHandle -> GlobalEnv -> BlockHandler SmtpdState
 smtpdHandler hOut theEnv buf = runSmtpd (smtpd buf >>= handler) theEnv
   where
@@ -48,10 +51,10 @@ smtpdHandler hOut theEnv buf = runSmtpd (smtpd buf >>= handler) theEnv
     when (any term rs) (fail "shutdown")
     return buf'
 
-
--- |This function relies on the fact that pipelining ends
--- with @DATA@ commands: dialog and payload must /not/ come
--- in a single buffer. See
+-- |The unified interface to dialog and data section. This
+-- function relies on the fact that pipelining ends with
+-- @DATA@ commands: dialog and payload must /not/ come in a
+-- single buffer. See
 -- <http://www.faqs.org/rfcs/rfc2920.html> section 3.1.
 
 smtpd :: Buffer -> Smtpd ([SmtpReply], Buffer)
@@ -99,6 +102,53 @@ handleDialog line = do
   return r
 
 
+-- * Running 'Smtpd' Computations
+
+-- |Run the given 'Smtpd' computation and write the logging
+-- output via the given 'Logger'. Use 'withGlobalEnv' to
+-- create the global environment and 'emptyEnv' to
+-- initialize the 'SmtpdState'.
+
+runSmtpd' :: Logger -> Smtpd a -> GlobalEnv -> SmtpdState
+          -> IO (a, SmtpdState)
+runSmtpd' logger f = runStateT . withLogger logger f
+
+-- |Convenience wrapper for 'runSmtpd'' with 'Logger'
+-- hard-coded to 'syslogger'.
+
+runSmtpd :: Smtpd a -> GlobalEnv -> SmtpdState
+         -> IO (a, SmtpdState)
+runSmtpd = runSmtpd' syslogger
+
+-- |Run the given computation with an initialized global
+-- environment. The environment is destroyed when this
+-- function returns.
+
+withGlobalEnv :: HostName           -- ^ 'myHeloName'
+              -> Resolver           -- ^ 'getDNSResolver'
+              -> EventT             -- ^ 'getEventHandler'
+              -> (GlobalEnv -> IO a)
+              -> IO a
+withGlobalEnv myHelo dns eventT f = do
+  let eventH  = eventT (mkEvent myHelo)
+      initEnv = do setval (mkVar "DNSResolver") (DNSR dns)
+                   setval (mkVar "EventHandler") (EH eventH)
+  newMVar (execState initEnv emptyEnv) >>= f
+
+-- |Generate the standard ESMTP event handler.
+
+mkEvent :: HostName -> Event -> Smtpd SmtpReply
+mkEvent heloName
+  = announce "PIPELINING"
+  . initHeloName heloName
+  . setMailID
+  . setMailFrom
+  . setIsEhloPeer
+  . setPeerHelo
+  . feedPayload
+  $ event
+
+
 -- * ESMTP Network Daemon
 
 smtpdServer :: Capacity -> GlobalEnv -> SocketHandler
@@ -132,6 +182,7 @@ smtpdMain cap theEnv hIn hOut initST = do
          IOException ie -> yellIO (CaughtIOError ie)
          _              -> yellIO (CaughtException e))
 
+
 main' :: Capacity -> PortID -> EventT -> IO ()
 main' cap port eventT = do
   installHandler sigPIPE Ignore Nothing
@@ -150,55 +201,6 @@ main = main' 1024 (PortNumber 2525) id
 
 getPeerAddr :: Smtpd (Maybe SockAddr)
 getPeerAddr = local $ getval (mkVar "PeerAddr")
-
--- * Running 'Smtpd' Computations
-
--- |Run the given 'Smtpd' computation and write the logging
--- output via the given 'Logger'. Use 'withGlobalEnv' to
--- create the global environment and 'emptyEnv' to
--- initialize the 'SmtpdState'.
-
-runSmtpd' :: Logger -> Smtpd a -> GlobalEnv -> SmtpdState
-          -> IO (a, SmtpdState)
-runSmtpd' logger f = runStateT . withLogger logger f
-
--- |Convenience wrapper for 'runSmtpd'' with 'Logger'
--- hard-coded to 'syslogger'.
-
-runSmtpd :: Smtpd a -> GlobalEnv -> SmtpdState
-         -> IO (a, SmtpdState)
-runSmtpd = runSmtpd' syslogger
-
--- ** Initialize Global Environment
-
--- |Run the given computation with an initialized global
--- environment. The environment is destroyed when this
--- function returns.
-
-withGlobalEnv :: HostName           -- ^ 'myHeloName'
-              -> Resolver           -- ^ 'getDNSResolver'
-              -> EventT             -- ^ 'getEventHandler'
-              -> (GlobalEnv -> IO a)
-              -> IO a
-withGlobalEnv myHelo dns eventT f = do
-  let eventH  = eventT (mkEvent myHelo)
-      initEnv = do setval (mkVar "DNSResolver") (DNSR dns)
-                   setval (mkVar "EventHandler") (EH eventH)
-  newMVar (execState initEnv emptyEnv) >>= f
-
--- |Generate the standard ESMTP event handler.
-
-mkEvent :: HostName -> Event -> Smtpd SmtpReply
-mkEvent heloName
-  = announce "PIPELINING"
-  . initHeloName heloName
-  . setMailID
-  . setMailFrom
-  . setIsEhloPeer
-  . setPeerHelo
-  . feedPayload
-  $ event
-
 
 -- ** Logging
 
