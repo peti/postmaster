@@ -4,8 +4,10 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O0 -Wall \
-            -iblockio -ihopenssl -imonadenv -isyslog -ichild \
+HFLAGS	 := -threaded -O -Wall \
+            -idns -iemail -iblockio -ichild -ihopenssl \
+	    -imonadenv -isyslog '-\#include <adns.h>' \
+	    '-\#include <sys/poll.h>' \
 	    -odir $(OBJDIR) -hidir $(OBJDIR)
 DOCDIR	 := docs
 HADDOCK	 := haddock
@@ -19,7 +21,7 @@ HDIFILES := \
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := blockio child hopenssl monadenv syslog
+MONODIRS := blockio child dns email hopenssl monadenv syslog
 
 ##### build postmaster binary
 
@@ -32,6 +34,16 @@ SRCS := Postmaster.hs				\
 	Postmaster/IO.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
+	dns/Data/Endian.hs			\
+	dns/Network/DNS.hs			\
+	dns/Network/DNS/ADNS.hs			\
+	dns/Network/DNS/PollResolver.hs		\
+	dns/Network/IP/Address.hs		\
+	dns/System/Posix/GetTimeOfDay.hs	\
+	dns/System/Posix/Poll.hs		\
+	email/Rfc2234.hs			\
+	email/Rfc2821.hs			\
+	email/Rfc2822.hs			\
 	hopenssl/Digest.hs			\
 	monadenv/MonadEnv.hs			\
 	syslog/Syslog.hs
