@@ -1,1 +1,1 @@
-:set -Wall -imonadenv -idns -ichild -iemail -iblockio -isyslog -ihopenssl -hidir .objs -odir .objs
+:set -Wall -imonadenv -ichild -iemail -iblockio -isyslog -ihopenssl -hidir .objs -odir .objs

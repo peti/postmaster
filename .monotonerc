@@ -8,7 +8,6 @@ function ignore_file(name)
   if (string.find(name, "^_darcs/")) then return true end
   if (string.find(name, "^blockio/")) then return true end
   if (string.find(name, "^child/")) then return true end
-  if (string.find(name, "^dns/")) then return true end
   if (string.find(name, "^docs/")) then return true end
   if (string.find(name, "^email/")) then return true end
   if (string.find(name, "^hopenssl/")) then return true end
