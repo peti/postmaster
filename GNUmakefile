@@ -4,27 +4,28 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O0 -Wall \
-	    -isyslog -odir $(OBJDIR) -hidir $(OBJDIR)
+HFLAGS	 := -threaded -Wall -O2 -funbox-strict-fields 	\
+	    -odir $(OBJDIR) -hidir $(OBJDIR) 		\
+	    -ignore-package blockio  -iblockio		\
+	    -ignore-package child    -ichild		\
+	    -ignore-package hsdns    -idns  '-\#include <adns.h>' '-\#include <sys/poll.h>' \
+	    -ignore-package hsemail  -iemail		\
+	    -ignore-package monadenv -imonadenv		\
+	    -ihopenssl '-\#include <openssl/evp.h>' 	\
+	    -isyslog
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
-HDI_PATH := http://localhost/ghc-current/ghc-6.5/html/libraries
-MYLIB    := http://localhost/homepage/
+HDI_PATH := http://haskell.org/ghc/docs/latest/html/libraries
 HDI_FILE := /usr/local/ghc-current/share/ghc-6.5/html/libraries
-HDIFILES := 							\
-  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock 		\
-  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock 	\
-  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock 		\
-  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock 		\
-  -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock	\
-  -i $(MYLIB)/hsemail/docs,$(HDI_FILE)/hsemail/hsemail.haddock	\
-  -i $(MYLIB)/hsdns/docs,$(HDI_FILE)/hsdns/hsdns.haddock		\
-  -i $(MYLIB)/monadenv/docs,$(HDI_FILE)/monadenv/monadenv.haddock	\
-  -i $(MYLIB)/blockio/docs,$(HDI_FILE)/blockio/blockio.haddock	\
-  -i $(MYLIB)/child/docs,$(HDI_FILE)/child/child.haddock
+HDIFILES := \
+  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock \
+  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock \
+  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock \
+  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
+  -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := syslog
+MONODIRS := blockio child dns email hopenssl monadenv syslog
 
 ##### build postmaster binary
 
@@ -49,6 +50,20 @@ SRCS := Postmaster.hs				\
 	Postmaster/FSM/Spooler.hs		\
 	Postmaster/IO.hs			\
 	Postmaster/Main.hs			\
+	blockio/System/IO/Driver.hs		\
+	child/Control/Concurrent/Child.hs	\
+	child/Control/Timeout.hs		\
+	dns/Data/Endian.hs			\
+	dns/Network/DNS.hs			\
+	dns/Network/DNS/ADNS.hs			\
+	dns/Network/DNS/PollResolver.hs		\
+	dns/Network/IP/Address.hs		\
+	dns/System/Posix/GetTimeOfDay.hs	\
+	dns/System/Posix/Poll.hs		\
+	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
+	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
+	hopenssl/Digest.hs			\
+	monadenv/Control/Monad/Env.hs			\
 	syslog/Syslog.hs
 
 all::	postmaster
@@ -127,7 +142,7 @@ distclean::	clean
 	@rm -rf $(MONODIRS)
 
 redate::
-	redate $(SRCS) tutorial.lhs README
+	redate Postmaster.hs Postmaster/*.hs Postmaster/*/*.hs tutorial.lhs README
 
 init-src::	$(MONODIRS) $(SRCS)
 	@-mkdir $(DOCDIR)
