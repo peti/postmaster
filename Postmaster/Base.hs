@@ -166,3 +166,23 @@ data LogEvent
   | CurrentState
   | AssignMailID ID
   deriving (Show)
+
+-- * Exception Handling
+
+-- |Run a computation and fall back to the second if the
+-- first throws an exception. The error is logged. An
+-- exception in the second computation will propagate.
+
+fallback
+  :: Smtpd a                    -- ^ computation to run
+  -> Smtpd a                    -- ^ fallback function
+  -> Smtpd a
+fallback f g = do
+  cfg <- ask
+  st <- get
+  (r, st', w) <- liftIO $ catch
+      (runRWST f cfg st)
+      (\e -> runRWST (yell (CaughtException e) >> g) cfg st)
+  tell w
+  put st'
+  return r

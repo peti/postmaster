@@ -20,7 +20,6 @@ module Postmaster
   , module Postmaster.Event
   , module Postmaster.IO
   , module Postmaster.Main
-  , module Postmaster.Target
   , module Control.Monad.RWS
   , module Data.Typeable
   , module Network
@@ -48,7 +47,6 @@ import Postmaster.Base
 import Postmaster.Event
 import Postmaster.IO
 import Postmaster.Main
-import Postmaster.Target
 
 -- ----- Configure Emacs -----
 --

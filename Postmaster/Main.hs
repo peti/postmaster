@@ -28,7 +28,6 @@ import Foreign
 import Postmaster.Base
 import Postmaster.Event
 import Postmaster.IO
-import Postmaster.Target
 import Rfc2821
 import Syslog
 import BlockIO
@@ -119,18 +118,6 @@ withGlobalEnv myHelo dns eventT f = do
                    setval (mkVar "EventHandler") (EH eventH)
   newMVar (execState initEnv emptyEnv) >>= f
 
--- |Generate the standard ESMTP event handler.
-
-mkEvent :: HostName -> Event -> Smtpd SmtpReply
-mkEvent heloName
-  = announce "PIPELINING"
-  . initHeloName heloName
-  . setMailID
-  . setMailFrom
-  . setIsEhloPeer
-  . setPeerHelo
-  . feedPayload
-  $ event
 
 -- |'Shutdown' on a thrown exception. Internal function.
 

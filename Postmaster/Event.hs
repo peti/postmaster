@@ -11,18 +11,18 @@
 
 module Postmaster.Event where
 
-import Prelude hiding ( catch )
--- import Foreign
-import Network ( HostName )
--- import Control.Concurrent.MVar
+import Foreign
+import Control.Exception
 import Control.Monad.RWS hiding ( local )
--- import Data.Typeable
--- import Data.Word
+import System.Directory
+import System.IO
+import Network ( HostName )
 import Postmaster.Base
-import Rfc2821 hiding ( path )
+import Postmaster.IO
 import MonadEnv
--- import Digest
--- import BlockIO
+import Rfc2821 hiding ( path )
+import BlockIO
+import Digest
 
 ----------------------------------------------------------------------
 -- * Event Handlers
@@ -35,6 +35,19 @@ import MonadEnv
 
 type EventT = (Event -> Smtpd SmtpReply)
             -> Event -> Smtpd SmtpReply
+
+-- |Generate the standard ESMTP event handler.
+
+mkEvent :: HostName -> Event -> Smtpd SmtpReply
+mkEvent heloName
+  = announce "PIPELINING"
+  . initHeloName heloName
+  . setMailID
+  . setMailFrom
+  . setIsEhloPeer
+  . setPeerHelo
+  . feedPayload "/tmp/test-spool"
+  $ event
 
 -- ** Local Variable: @SessionState@
 
@@ -113,6 +126,18 @@ setMailFrom f e = do
 
 getMailFrom :: Smtpd Mailbox
 getMailFrom = local $ getval_ (mkVar "MailFrom")
+
+
+-- -- ** Local Variable: @RcptTo@
+--
+-- setRcptTo :: [Target] -> Smtpd ()
+-- setRcptTo = local . setval (mkVar "RcptTo")
+--
+-- getRcptTo :: Smtpd [Target]
+-- getRcptTo = local $ getDefault (mkVar "RcptTo") []
+--
+-- addRcptTo :: Target -> Smtpd ()
+-- addRcptTo m = getRcptTo >>= setRcptTo . (m:)
 
 
 -- ** Local Variable: @MailID@
@@ -219,16 +244,81 @@ event Deliver   = event NotImplemened
 -- * The Standard Bad-Ass Payload Handler
 ----------------------------------------------------------------------
 
--- |We deliver everything from spool. Payload will be
--- written into a temporary file in the spool, an SHA1 hash
--- is calculated over the contents as we read\/write it.
--- When the data section ends, we rename the temporary file
--- to its hash.
+feedPayload :: FilePath -> EventT
 
--- newtype MailID = MailID [Word8]
---   deriving (Eq, Ord, Typeable)
---
--- instance Show MailID where
---   showsPrec _ (MailID ws) = showString (ws >>= toHex)
---
--- type DirPath = FilePath
+feedPayload spool _ StartData =
+  do mkSHA1 >>= local . setval (mkVar "sha1engine")
+     mid <- getMailID
+     let path = spool ++ "/temp." ++ show mid
+     local $ setval (mkVar "spoolname") path
+     h <- liftIO (openBinaryFile path WriteMode)
+     local $ setval (mkVar "spoolhandle") h
+     setDataHandler (dataHandler h)
+     say 3 5 4 "terminate data with <CRLF>.<CRLF>"
+  `fallback`
+    say 4 5 1 "requested action aborted: error in processing"
+
+feedPayload spool _ Deliver = do
+  do let skey = mkVar "sha1engine"
+         hkey = mkVar "spoolhandle"
+         fkey = mkVar "spoolname"
+     local (getval_ hkey) >>= liftIO . hClose >> local (unsetval hkey)
+     ctx   <- local (getval_ skey)
+     fname <- local (getval_ fkey)
+     sha1  <- liftIO $ do
+        sha1 <- (evalStateT final ctx >>= return . (>>= toHex))
+                   `finally` (\(DST x) -> ctxDestroy x) ctx
+        let fname' = spool ++ "/" ++ sha1
+        renameFile fname fname'
+        return sha1
+     local (unsetval skey >> unsetval fkey)
+     say 2 5 0 (sha1 ++ " message accepted for delivery")
+  `fallback`
+    say 4 5 1 "requested action aborted: error in processing"
+
+feedPayload _ f ResetState = cleanupSpool >> f ResetState
+feedPayload _ f Shutdown   = cleanupSpool >> f Shutdown
+feedPayload _ f e = f e
+
+-- ** Data Handler Helpers
+
+dataHandler :: WriteHandle -> DataHandler
+dataHandler _ buf@(Buf _ _ 0) = return (Nothing, buf)
+dataHandler hOut buf@(Buf _ ptr n) = do
+  xs <- liftIO (peekArray (fromIntegral n) ptr)
+  let theEnd   = map (toEnum . fromEnum) "\r\n.\r\n"
+      (eod, i) = case strstr theEnd xs of
+                   Nothing -> (False, max 0 (n - 4))
+                   Just j -> (True, fromIntegral (j-3))
+      i'       = fromIntegral i
+  liftIO (hPutBuf hOut ptr i')
+  local (getval_ (mkVar "sha1engine"))
+    >>= liftIO . execStateT (update' (ptr, i'))
+    >>= local . setval (mkVar "sha1engine")
+  buf' <- liftIO (flush i buf)
+  if not eod then return (Nothing, buf') else do
+    r <- trigger Deliver
+    trigger ResetState
+    setSessionState HaveHelo
+    return (Just r, buf')
+
+mkSHA1 :: Smtpd DigestState
+mkSHA1 = liftIO $
+  bracketOnError ctxCreate ctxDestroy $ \ctx -> do
+    when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
+    md <- toMDEngine SHA1
+    when (md == nullPtr) (fail "can't initialize SHA1 digest engine")
+    rc <- digestInit ctx md
+    when (rc == 0) (fail "can't initialize SHA1 digest")
+    return (DST ctx)
+
+cleanupSpool :: Smtpd ()
+cleanupSpool = do
+  let sha1 = mkVar "sha1engine"
+      hkey = mkVar "spoolhandle"
+      fkey = mkVar "spoolname"
+  local (getval sha1)
+    >>= maybe (return ()) (\(DST ctx) -> liftIO (ctxDestroy ctx))
+  local (getval hkey) >>= maybe (return ()) (liftIO . hClose)
+  local (getval fkey) >>= maybe (return ()) (liftIO . removeFile)
+  local (unsetval sha1 >> unsetval hkey >> unsetval fkey)

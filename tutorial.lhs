@@ -146,12 +146,14 @@ pass ``[]``.
 Alright, the simplest possible MTA you can configure would
 be this::
 
-> rfc2821 :: FilePath -> EventT
-> rfc2821 mbox _ (AddRcptTo (Mailbox [] "postmaster" [])) = do
->   let path = "/bin/sh"
->       args = [ "-c", "cat >>" ++ mbox ]
->   pipe [] path args
-> rfc2821 _ f e = f e
+ TODO: broken with spooler
+
+ > rfc2821 :: FilePath -> EventT
+ > rfc2821 mbox _ (AddRcptTo (Mailbox [] "postmaster" [])) = do
+ >   let path = "/bin/sh"
+ >       args = [ "-c", "cat >>" ++ mbox ]
+ >   pipe [] path args
+ > rfc2821 _ f e = f e
 
 You are fully [RFC2821]_ compliant now. Let's try it out!
 
@@ -230,20 +232,22 @@ re-send them somewhere else, etc. To build a local mailer
 for Procmail, all we have to do is to figure out the correct
 command-line arguments::
 
-> procmail :: [Mailbox] -> String -> String -> Smtpd SmtpReply
-> procmail _ [] _ = fail "procmail: need non-empty user name"
-> procmail mbox user arg = do
->   from <- getMailFrom
->   uid <- liftIO getRealUserID
->   let cmd  = concat $ intersperse " "
->              [ "procmail"
->              , if uid == 0 then "-o" else []
->              , "-Y"        -- ignore Content-Length header
->              , "-f", show (show from)
->              , "-a", show arg
->              , "-d", show user
->              ]
->   shell mbox cmd
+ todo: broken with spool
+
+ > procmail :: [Mailbox] -> String -> String -> Smtpd SmtpReply
+ > procmail _ [] _ = fail "procmail: need non-empty user name"
+ > procmail mbox user arg = do
+ >   from <- getMailFrom
+ >   uid <- liftIO getRealUserID
+ >   let cmd  = concat $ intersperse " "
+ >              [ "procmail"
+ >              , if uid == 0 then "-o" else []
+ >              , "-Y"        -- ignore Content-Length header
+ >              , "-f", show (show from)
+ >              , "-a", show arg
+ >              , "-d", show user
+ >              ]
+ >   shell mbox cmd
 
 We ``show`` the command-line arguments to Procmail to make
 sure the empty string will work okay. ``show`` will also
@@ -283,7 +287,7 @@ The implementation is trivial::
 > localHosts :: [HostName] -> EventT
 > localHosts lhosts f e@(AddRcptTo (Mailbox _ _ host)) = do
 >   if (map toLower host) `elem` lhosts
->      then f e
+>      then say 2 5 0 "TODO: We accept everything right now"
 >      else say 5 5 3 "unknown recipient"
 > localHosts _ f e = f e
 
@@ -305,16 +309,18 @@ Our database lookup isn't complicated either: [5]_ ::
 Another function that guards access to ``f`` on the
 ``AddRcptTo`` event. And our local mailer is::
 
-> localProcmail :: EventT
-> localProcmail _ (AddRcptTo mbox@(Mailbox _ lpart _)) =
->   procmail [mbox] lpart []
-> localProcmail f e = f e
+ TODO: broken with spooler
+
+ > localProcmail :: EventT
+ > localProcmail _ (AddRcptTo mbox@(Mailbox _ lpart _)) =
+ >   procmail [mbox] lpart []
+ > localProcmail f e = f e
 
 Done. ::
 
 > stdConfig :: EventT
 > stdConfig =
->   localHosts myHostNames . exposePasswd . localProcmail
+>   localHosts myHostNames . exposePasswd -- TODO: . localProcmail
 
 The code is point-free, so it must be good. Now edit the
 list of local hostnames to suit your system's setup ... ::
@@ -463,10 +469,10 @@ Experimental
 >   ]
 
 > peti :: EventT
-> peti = badass . localHosts local_host_names . relayAll
+> peti = badass . localHosts local_host_names {- TODO: . relayAll
 >   where
 >   relayAll _ (AddRcptTo mbox) = relay [mbox]
->   relayAll f e                = f e
+>   relayAll f e                = f e -}
 
 Disallow Routing Addresses
 ''''''''''''''''''''''''''

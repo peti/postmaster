@@ -30,7 +30,6 @@ SRCS := Postmaster.hs				\
 	Postmaster/Event.hs			\
 	Postmaster/Main.hs			\
 	Postmaster/IO.hs			\
-	Postmaster/Target.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
 	hopenssl/Digest.hs			\
