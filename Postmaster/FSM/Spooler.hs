@@ -41,31 +41,36 @@ spoolHandle = defineLocal "spoolhandle"
 handlePayload :: FilePath -> EventT
 
 handlePayload spool _ StartData =
-  do mkSHA1 >>= sha1Engine . flip setval
-     mid <- getMailID
+  do mid <- getMailID
      let path = spool ++ "/temp." ++ show mid
-     spoolName (`setval` path)
-     h <- liftIO (openBinaryFile path WriteMode)
+     (h, sha1) <- liftIO $ bracketOnError
+       (openBinaryFile path WriteMode)
+       (hClose)
+       (\h -> bracketOnError ctxCreate ctxDestroy $ \ctx -> do
+          when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
+          md <- toMDEngine SHA1
+          when (md == nullPtr) (fail "can't initialize SHA1 digest engine")
+          rc <- digestInit ctx md
+          when (rc == 0) (fail "can't initialize SHA1 digest")
+          return (h, DST ctx))
      spoolHandle (`setval` h)
+     spoolName (`setval` path)
+     sha1Engine (`setval` sha1)
      setDataHandler (feeder h)
      say 3 5 4 "terminate data with <CRLF>.<CRLF>"
-  `fallback`
-    say 4 5 1 "requested action aborted: error in processing"
+  `fallback` do
+     say 4 5 1 "requested action aborted: error in processing"
 
 handlePayload spool _ Deliver =
   do spoolHandle getval_ >>= liftIO . hClose >> spoolHandle unsetval
-     ctx   <- sha1Engine getval_
      fname <- spoolName getval_
-     sha1  <- liftIO $ do
-        sha1 <- (evalStateT final ctx >>= return . (>>= toHex))
-                   `finally` (\(DST x) -> ctxDestroy x) ctx
-        let fname' = spool ++ "/" ++ sha1
-        renameFile fname fname'
-        return sha1
-     sha1Engine unsetval >> spoolName unsetval
+     ctx <- sha1Engine getval_
+     sha1 <- fmap (>>= toHex) (liftIO (evalStateT final ctx))
+     let fname' = spool ++ "/" ++ sha1
+     liftIO (renameFile fname fname')
      say 2 5 0 (sha1 ++ " message accepted for delivery")
-  `fallback`
-    say 4 5 1 "requested action aborted: error in processing"
+  `fallback` do
+     say 4 5 1 "requested action aborted: error in processing"
 
 handlePayload _ f ResetState = cleanupSpool >> f ResetState
 handlePayload _ f Shutdown   = cleanupSpool >> f Shutdown
@@ -91,24 +96,15 @@ feeder hOut buf@(Buf _ ptr n) = do
     setSessionState HaveHelo
     return (Just r, buf')
 
-mkSHA1 :: Smtpd DigestState
-mkSHA1 = liftIO $
-  bracketOnError ctxCreate ctxDestroy $ \ctx -> do
-    when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
-    md <- toMDEngine SHA1
-    when (md == nullPtr) (fail "can't initialize SHA1 digest engine")
-    rc <- digestInit ctx md
-    when (rc == 0) (fail "can't initialize SHA1 digest")
-    return (DST ctx)
-
 cleanupSpool :: Smtpd ()
 cleanupSpool = do
-  sha1Engine getval
-    >>= maybe (return ()) (\(DST ctx) -> liftIO (ctxDestroy ctx))
-    >> sha1Engine unsetval
-  spoolHandle getval
-    >>= maybe (return ()) (liftIO . hClose)
-    >> spoolHandle unsetval
-  spoolName getval
-    >>= maybe (return ()) (liftIO . removeFile)
-    >> spoolName unsetval
+  sha1  <- sha1Engine getval
+  h     <- spoolHandle getval
+  fname <- spoolName getval
+  mapM ($ unsetval) [ sha1Engine, spoolHandle, spoolName, dataHandler ]
+  liftIO $ do
+    let clean Nothing  _ = return ()
+        clean (Just x) f = try (f x) >> return ()
+    clean sha1 (\(DST ctx) -> ctxDestroy ctx)
+    clean h hClose
+    clean fname removeFile

@@ -26,10 +26,10 @@ import Network.DNS
 import Foreign
 import Postmaster.Base
 import Postmaster.FSM
-import Postmaster.FSM.SessionState ( setSessionState )
 import Postmaster.FSM.DNSResolver  ( setDNSResolver  )
 import Postmaster.FSM.EventHandler ( setEventHandler )
 import Postmaster.FSM.PeerAddr     ( setPeerAddr     )
+import Postmaster.FSM.SessionState ( setSessionState )
 import Postmaster.IO
 import Rfc2821
 import Syslog
@@ -78,7 +78,10 @@ handleDialog line = do
   sst <- getSessionState
   let (e, sst') = runState (smtpdFSM (fixCRLF line)) sst
   r <- trigger e
-  when (isSuccess r) (setSessionState sst')
+  case (e, isSuccess r) of
+    (_, True)          -> setSessionState sst'
+    (StartData, False) -> trigger ResetState >> setSessionState HaveHelo
+    _                  -> return ()
   return r
 
 
@@ -101,12 +104,12 @@ runSmtpd :: Smtpd a -> GlobalEnv -> SmtpdState
 runSmtpd = runSmtpd' syslogger
 
 -- |Run the given computation with an initialized global
--- environment. The environment is destroyed when this
--- function returns.
+-- environment for 'Smtpd'. The environment is destroyed
+-- when this function returns.
 
 withGlobalEnv :: HostName           -- ^ 'myHeloName'
-              -> Resolver           -- ^ 'getDNSResolver'
-              -> EventT             -- ^ 'getEventHandler'
+              -> Resolver
+              -> EventT
               -> (GlobalEnv -> IO a)
               -> IO a
 withGlobalEnv myHelo dns eventT f = do
@@ -114,6 +117,7 @@ withGlobalEnv myHelo dns eventT f = do
       initEnv = do setDNSResolver dns
                    setEventHandler eventH
   newMVar (execState initEnv emptyEnv) >>= f
+
 
 -- * ESMTP Network Daemon
 
