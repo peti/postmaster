@@ -62,7 +62,7 @@ SRCS := Postmaster.hs				\
 	dns/System/Posix/Poll.hs		\
 	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
 	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
-	hopenssl/Digest.hs			\
+	hopenssl/OpenSSL/Digest.hs			\
 	monadenv/Control/Monad/Env.hs			\
 	syslog/Syslog.hs
 
