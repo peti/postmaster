@@ -18,8 +18,6 @@
 module Postmaster
   ( module Postmaster.Base
   , module Postmaster.Event
-  , module Postmaster.Extern
-  , module Postmaster.FSM
   , module Postmaster.IO
   , module Postmaster.Main
   , module Postmaster.Target
@@ -48,8 +46,6 @@ import Syslog
 import BlockIO ( Capacity )
 import Postmaster.Base
 import Postmaster.Event
-import Postmaster.Extern
-import Postmaster.FSM
 import Postmaster.IO
 import Postmaster.Main
 import Postmaster.Target
