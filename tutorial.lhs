@@ -353,7 +353,7 @@ Dynamic Blacklisting
 >         let delta  = addToClockTime ttl
 >             stale  = \(TS ts _) -> delta ts < now
 >             clean  = reverse . dropWhile stale . reverse
->             expire = maybe [] clean
+>             expire = (\bl -> (bl,bl)) . maybe [] clean
 >         blackl <- global (modifyVar (mkVar "blacklist") expire)
 >         if all (\(TS _ a) -> a /= addr) blackl
 >             then return r
