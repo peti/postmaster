@@ -36,17 +36,27 @@ import MonadEnv
 -- * Speaking ESMTP
 
 smtpdHandler :: WriteHandle -> GlobalEnv -> BlockHandler SmtpdState
-smtpdHandler hOut theEnv buf = runSmtpd (smtpd hOut buf) theEnv
+smtpdHandler hOut theEnv buf = runSmtpd (smtpd buf >>= handler) theEnv
+  where
+  handler :: ([SmtpReply], Buffer) -> Smtpd Buffer
+  handler (rs, buf') = do
+    safeWrite (hPutStr hOut (concatMap show rs) >> hFlush hOut)
+    let term (Reply (Code Success Connection 1) _)          = True
+        term (Reply (Code TransientFailure Connection 1) _) = True
+        term _                                              = False
+    when (any term rs) (fail "shutdown")
+    return buf'
 
--- |/NOTE:/ This function relies on the fact that @DATA@
--- commands end pipelining: single buffer must /not/ contain
--- dialog and payload. See
+
+-- |This function relies on the fact that pipelining ends
+-- with @DATA@ commands: dialog and payload must /not/ come
+-- in a single buffer. See
 -- <http://www.faqs.org/rfcs/rfc2920.html> section 3.1.
 
-smtpd :: WriteHandle -> Buffer -> Smtpd Buffer
-smtpd hOut buf@(Buf _ ptr n) = do
+smtpd :: Buffer -> Smtpd ([SmtpReply], Buffer)
+smtpd buf@(Buf _ ptr n) = do
   sst <- getSessionState
-  (rs, buf') <- if (sst == HaveData)
+  if (sst == HaveData)
       then do (r, buf') <- handleData buf
               return (maybeToList r, buf')
       else do xs <- liftIO (peekArray (fromIntegral n) ptr)
@@ -58,12 +68,6 @@ smtpd hOut buf@(Buf _ ptr n) = do
               rs <- mapM handleDialog ls
               buf' <- liftIO $ flush (fromIntegral i) buf
               return (rs, buf')
-  safeWrite (hPutStr hOut (concatMap show rs) >> hFlush hOut)
-  let term (Reply (Code Success Connection 1) _)          = True
-      term (Reply (Code TransientFailure Connection 1) _) = True
-      term _                                              = False
-  when (any term rs) (fail "shutdown")
-  return buf'
 
 handleData :: Buffer -> Smtpd (Maybe SmtpReply, Buffer)
 handleData buf@(Buf _ ptr n) = do
