@@ -67,17 +67,18 @@ type ID = Int
 -- |Produce a unique 'ID' using a global counter.
 
 getUniqueID :: Smtpd ID
-getUniqueID = global $ tick "UniqueID"
+getUniqueID = global $ tick (mkVar "UniqueID")
 
 -- |Provides a unique 'ID' for this session.
 
 mySessionID :: Smtpd ID
 mySessionID = do
-  sid' <- local (getval "SessionID")
+  let key = mkVar "SessionID"
+  sid' <- local $ getval key
   case sid' of
     Just sid -> return sid
     _        -> do sid <- getUniqueID
-                   local $ setval "SessionID" sid
+                   local (setval key sid)
                    return sid
 
 -- ** Event Handler
@@ -90,8 +91,9 @@ newtype EventHandler = EH (Event -> Smtpd SmtpReply)
 
 getEventHandler :: Smtpd (Event -> Smtpd SmtpReply)
 getEventHandler = do
-  EH f <- local (getval "EventHandler") >>=
-            maybe (global $ getval_ "EventHandler") return
+  let key = mkVar "EventHandler"
+  EH f <- local (getval key)
+      >>= maybe (global $ getval_ key) return
   return f
 
 -- |Trigger the given event.
@@ -106,7 +108,7 @@ newtype DNSResolver = DNSR Resolver
 
 getDNSResolver :: Smtpd Resolver
 getDNSResolver =
-  global $ getval_ "DNSResolver" >>= return . \(DNSR f) -> f
+  global $ getval_ (mkVar "DNSResolver") >>= return . \(DNSR f) -> f
 
 queryA :: HostName -> Smtpd (Maybe [HostAddress])
 queryA h = getDNSResolver >>= \r -> liftIO $ query resolveA r h

@@ -101,7 +101,7 @@ smtpdServer :: Capacity -> GlobalEnv -> SocketHandler
 smtpdServer cap theEnv =
   handleLazy ReadWriteMode $ \(h, Just sa) -> do
     hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
-    let st = execState (setval "PeerAddr" sa) emptyEnv
+    let st = execState (setval (mkVar "PeerAddr") sa) emptyEnv
     smtpdMain cap theEnv h h st
 
 smtpdMain :: Capacity
@@ -119,7 +119,7 @@ smtpdMain cap theEnv hIn hOut initST = do
   ((r, to, sid), st) <- runSmtpd greet theEnv initST
   let Reply (Code rc _ _) _ = r
   when (rc == Success) $ do
-    let getTO  = evalState (getDefault "ReadTimeout" to)
+    let getTO  = evalState (getDefault (mkVar "ReadTimeout") to)
         yellIO = syslogger . LogMsg sid st
         hMain  = smtpdHandler hOut theEnv
     catch
@@ -174,8 +174,8 @@ withGlobalEnv :: HostName           -- ^ 'myHeloName'
               -> IO a
 withGlobalEnv myHelo dns eventT f = do
   let eventH  = eventT (mkEvent myHelo)
-      initEnv = do setval "DNSResolver" (DNSR dns)
-                   setval "EventHandler" (EH eventH)
+      initEnv = do setval (mkVar "DNSResolver") (DNSR dns)
+                   setval (mkVar "EventHandler") (EH eventH)
   newMVar (execState initEnv emptyEnv) >>= f
 
 -- ** Logging
@@ -202,4 +202,4 @@ syslogger (LogMsg sid _ e) = syslog Info $
 -- * Local Variable: @PeerAddr@
 
 getPeerAddr :: Smtpd (Maybe SockAddr)
-getPeerAddr = local (getval "PeerAddr")
+getPeerAddr = local $ getval (mkVar "PeerAddr")

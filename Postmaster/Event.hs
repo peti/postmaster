@@ -54,12 +54,12 @@ mkEvent heloName
 -- ** Local Variable: @SessionState@
 
 setSessionState :: SessionState -> Smtpd ()
-setSessionState = local . setval "SessionState"
+setSessionState = local . setval (mkVar "SessionState")
 
 -- |Will 'fail' when @SessionState@ is not set.
 
 getSessionState :: Smtpd SessionState
-getSessionState = local $ getDefault "SessionState" Unknown
+getSessionState = local $ getDefault (mkVar "SessionState") Unknown
 
 -- ** Local Variable: @HeloName@
 
@@ -69,13 +69,13 @@ getSessionState = local $ getDefault "SessionState" Unknown
 initHeloName :: HostName -> EventT
 initHeloName n f e = do
   when (e == Greeting)
-    (local (withval "HeloName" (maybe n id)) >> return ())
+    (local (withval_ (mkVar "HeloName") (maybe n id)))
   f e
 
 -- |Will 'fail' when @HeloName@ is not set.
 
 myHeloName :: Smtpd HostName
-myHeloName = local $ getval_ "HeloName"
+myHeloName = local $ getval_ (mkVar "HeloName")
 
 
 -- ** Local Variable: @IsEhloPeer@
@@ -83,7 +83,7 @@ myHeloName = local $ getval_ "HeloName"
 setIsEhloPeer :: EventT
 setIsEhloPeer f e = do
   r@(Reply rc _) <- f e
-  let set = local . setval "IsEhloPeer"
+  let set = local . setval (mkVar "IsEhloPeer")
   case (e,rc) of
     (SayEhlo _, Code Success _ _) -> set True
     (SayHelo _, Code Success _ _) -> set False
@@ -91,7 +91,7 @@ setIsEhloPeer f e = do
   return r
 
 isEhloPeer :: Smtpd Bool
-isEhloPeer = local $ getDefault "IsEhloPeer" False
+isEhloPeer = local $ getDefault (mkVar "IsEhloPeer") False
 
 -- ** Local Variable: @PeerHelo@
 
@@ -100,7 +100,7 @@ isEhloPeer = local $ getDefault "IsEhloPeer" False
 setPeerHelo :: EventT
 setPeerHelo f e = do
   r@(Reply rc _) <- f e
-  let set = local . setval "PeerHelo"
+  let set = local . setval (mkVar "PeerHelo")
   case (e,rc) of
     (SayEhlo peer, Code Success _ _) -> set peer
     (SayHelo peer, Code Success _ _) -> set peer
@@ -110,7 +110,7 @@ setPeerHelo f e = do
 -- |Will 'fail' when @PeerHelo@ is not set.
 
 getPeerHelo :: Smtpd HostName
-getPeerHelo = local $ getval_ "PeerHelo"
+getPeerHelo = local $ getval_ (mkVar "PeerHelo")
 
 
 -- ** Local Variable: @MailFrom@
@@ -122,22 +122,22 @@ setMailFrom :: EventT
 setMailFrom f e = do
   r@(Reply rc _) <- f e
   case (e,rc) of
-    (SetMailFrom x, Code Success _ _) -> local $ setval "MailFrom" x
-    (ResetState, _)                   -> local $ unsetval "MailFrom"
+    (SetMailFrom x, Code Success _ _) -> local $ setval (mkVar "MailFrom") x
+    (ResetState, _)                   -> local $ unsetval (mkVar "MailFrom")
     (_, _)                            -> return ()
   return r
 
 getMailFrom :: Smtpd Mailbox
-getMailFrom = local $ getval_ "MailFrom"
+getMailFrom = local $ getval_ (mkVar "MailFrom")
 
 
 -- ** Local Variable: @RcptTo@
 
 setRcptTo :: [Target] -> Smtpd ()
-setRcptTo = local . setval "RcptTo"
+setRcptTo = local . setval (mkVar "RcptTo")
 
 getRcptTo :: Smtpd [Target]
-getRcptTo = local $ getDefault "RcptTo" []
+getRcptTo = local $ getDefault (mkVar "RcptTo") []
 
 addRcptTo :: Target -> Smtpd ()
 addRcptTo m = getRcptTo >>= setRcptTo . (m:)
@@ -151,15 +151,15 @@ setMailID :: EventT
 setMailID f e = do
   r@(Reply rc _) <- f e
   case (e,rc) of
-    (SetMailFrom _, Code Success _ _) -> getUniqueID >>= local . setval "MailID"
-    (ResetState, _)                   -> local $ unsetval "MailID"
+    (SetMailFrom _, Code Success _ _) -> getUniqueID >>= local . setval (mkVar "MailID")
+    (ResetState, _)                   -> local $ unsetval (mkVar "MailID")
     (_, _)                            -> return ()
   return r
 
 -- |Will 'fail' when @MailID@ is not set.
 
 getMailID :: Smtpd ID
-getMailID = local $ getval_ "MailID"
+getMailID = local $ getval_ (mkVar "MailID")
 
 -- ** Combinator: Announce ESMTP Capability
 

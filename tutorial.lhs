@@ -502,7 +502,7 @@ Dynamic Blacklisting
 >           stale  = \(TS ts _) -> delta ts < now
 >           clean  = reverse . dropWhile stale . reverse
 >           expire = maybe [] clean
->       blackl <- global (withval "blacklist" expire)
+>       blackl <- global (withval (mkVar "blacklist") expire)
 >       if all (\(TS _ a) -> a /= addr) blackl
 >          then f e
 >          else do yell (Msg (msg sa))
@@ -526,7 +526,7 @@ whenever we feel like it::
 >       now <- liftIO getClockTime
 >       let a'     = TS now a
 >           append = maybe [a'] (\as -> a' : as)
->       global (withval "blacklist" append)
+>       global (withval (mkVar "blacklist") append)
 >       return ()
 >   where
 >   msg = showString "black-listing peer: " . show
@@ -546,7 +546,7 @@ causes Postmaster to drop the connection after the reply::
 >   r@(Reply (Code rc _ _) _) <- f e
 >   case rc of
 >     PermanentFailure -> do
->       c <- local (tick "permFailures")
+>       c <- local (tick (mkVar "permFailures"))
 >       if c >= permFailBound
 >          then ban >> bye
 >          else return r

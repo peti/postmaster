@@ -39,15 +39,14 @@ listener p h = bracket (listenOn p) (sClose) (acceptor h)
 
 -- |Given a listening socket, this function will loop
 -- forever 'accept'ing incoming connections. For each
--- connection a 'SocketHandler' thread is forked to handle
--- the connection.
+-- connection a 'SocketHandler' thread is 'forkIO''d.
 
 acceptor :: SocketHandler -> Socket -> IO ()
 acceptor h ls = do
   bracketOnError
     (accept ls)
     (sClose . fst)
-    (\peer@(s,_) -> fork (h peer) `finally` sClose s)
+    (\peer@(s,_) -> fork $ h peer `finally` sClose s)
   acceptor h ls
   where
   fork f = forkIO f >> return ()
@@ -68,16 +67,16 @@ data WriteTimeout = WriteTimeout Timeout
                   deriving (Typeable, Show)
 
 setReadTimeout :: Timeout -> Smtpd ()
-setReadTimeout = local . setval "ReadTimeout"
+setReadTimeout = local . setval (mkVar "ReadTimeout")
 
 getReadTimeout :: Smtpd Timeout
-getReadTimeout = local $ getDefault "ReadTimeout" (90 * 1000000)
+getReadTimeout = local $ getDefault (mkVar "ReadTimeout") (90 * 1000000)
 
 setWriteTimeout :: Timeout -> Smtpd ()
-setWriteTimeout = local . setval "WriteTimeout"
+setWriteTimeout = local . setval (mkVar "WriteTimeout")
 
 getWriteTimeout :: Smtpd Timeout
-getWriteTimeout = local $ getDefault "WriteTimeout" (90 * 1000000)
+getWriteTimeout = local $ getDefault (mkVar "WriteTimeout") (90 * 1000000)
 
 safeWrite :: IO a -> Smtpd a
 safeWrite f = do
