@@ -15,7 +15,6 @@ module Postmaster.Main where
 
 import Prelude hiding ( catch )
 import Data.Unique
-import Data.List ( isPrefixOf )
 import Control.Exception
 import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
