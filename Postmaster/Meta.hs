@@ -1,4 +1,34 @@
 {-# OPTIONS -fth -ddump-splices #-}
+{- |
+   Module      :  Postmaster.Meta
+   Copyright   :  (c) 2005-02-12 by Peter Simons
+   License     :  GPL2
+
+   Maintainer  :  simons@cryp.to
+   Stability   :  provisional
+   Portability :  Haskell 2-pre
+
+   This module provides the function 'defineVar' which can
+   be used to generate the usual set of access functions for
+   a local variable. The invocation
+
+   >   $(defineVar "foo" [t| Int |])
+
+   generates these functions:
+
+   > getFoo :: Smtpd (Maybe Int)
+   > getFoo = local (getval (mkVar "foo"))
+   >
+   > getFoo_ :: Smtpd Int
+   > getFoo_ = local (getval_ (mkVar "foo"))
+   >
+   > setFoo :: Int -> Smtpd ()
+   > setFoo = local . setval (mkVar "foo")
+   >
+   > unsetFoo :: Smtpd ()
+   > unsetFoo = local (unsetval (mkVar "foo"))
+
+ -}
 
 module Postmaster.Meta where
 

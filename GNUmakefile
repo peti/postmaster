@@ -31,6 +31,8 @@ MONODIRS := hopenssl syslog
 
 .PHONY: all
 
+    # TODO: Postmaster/Meta.hs is missing because
+    # Haddock can't deal with it.
 SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
 	Postmaster/FSM.hs			\
