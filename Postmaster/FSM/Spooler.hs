@@ -1,6 +1,7 @@
+{-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.Spooler
-   Copyright   :  (c) 2005-02-10 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -12,99 +13,112 @@ module Postmaster.FSM.Spooler where
 
 import Foreign
 import Control.Exception
+import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
 import System.Directory
 import System.IO
 import Postmaster.Base
-import Postmaster.IO
 import Postmaster.FSM.EventHandler
 import Postmaster.FSM.SessionState
 import Postmaster.FSM.DataHandler
 import Postmaster.FSM.MailID
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 import System.IO.Driver
 import Digest
+import Data.Typeable
 
-sha1Engine :: SmtpdVariable
-sha1Engine = defineLocal "sha1engine"
+data Spooler = S (Maybe FilePath) (Maybe WriteHandle) DigestState
+             deriving (Typeable)
 
-spoolName :: SmtpdVariable
-spoolName = defineLocal "spoolname"
+spoolerState :: SmtpdVariable
+spoolerState = defineLocal "spoolerstate"
 
-spoolHandle :: SmtpdVariable
-spoolHandle = defineLocal "spoolhandle"
+getState :: Smtpd (MVar Spooler)
+getState = spoolerState getVar_
 
+setState :: MVar Spooler -> Smtpd ()
+setState st = spoolerState (`setVar` st)
 
--- |The Standard Bad-Ass Payload Handler
+-- |The Standard Bad-Ass Payload Handler. Needs the path to
+-- the spool directory.
 
 handlePayload :: FilePath -> EventT
 
+handlePayload _ f Greeting = do
+  liftIO (newMVar (S Nothing Nothing (DST nullPtr))) >>= setState
+  setDataHandler feeder
+  f Greeting
+
 handlePayload spool _ StartData =
-  do mid <- getMailID
+  do st <- getState
+     mid <- getMailID
      let path = spool ++ "/temp." ++ show mid
-     (h, sha1) <- liftIO $ bracketOnError
-       (openBinaryFile path WriteMode)
-       (hClose)
-       (\h -> bracketOnError ctxCreate ctxDestroy $ \ctx -> do
-          when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
-          md <- toMDEngine SHA1
-          when (md == nullPtr) (fail "can't initialize SHA1 digest engine")
-          rc <- digestInit ctx md
-          when (rc == 0) (fail "can't initialize SHA1 digest")
-          return (h, DST ctx))
-     spoolHandle (`setval` h)
-     spoolName (`setval` path)
-     sha1Engine (`setval` sha1)
-     setDataHandler (feeder h)
+     liftIO . modifyMVar_ st $ \(S p' h' (DST c')) ->
+       assert (p' == Nothing) $
+       assert (h' == Nothing) $
+       assert (c' == nullPtr) $
+       bracketOnError
+         (openBinaryFile path WriteMode)
+         (hClose)
+         (\h -> bracketOnError ctxCreate ctxDestroy $ \ctx -> do
+            hSetBuffering h NoBuffering
+            when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
+            md <- toMDEngine SHA1
+            when (md == nullPtr) (fail "can't initialize SHA1 digest engine")
+            rc <- digestInit ctx md
+            when (rc == 0) (fail "can't initialize SHA1 digest")
+            return (S (Just path) (Just h) (DST ctx)))
      say 3 5 4 "terminate data with <CRLF>.<CRLF>"
   `fallback`
      say 4 5 1 "requested action aborted: error in processing"
 
 handlePayload spool _ Deliver =
-  do spoolHandle getval_ >>= liftIO . hClose >> spoolHandle unsetval
-     ctx <- sha1Engine getval_
-     sha1 <- fmap (>>= toHex) (liftIO (evalStateT final ctx))
-     fname <- spoolName getval_
-     let fname' = spool ++ "/" ++ sha1
-     liftIO (renameFile fname fname')
+  do st <- getState
+     sha1 <- liftIO $
+       modifyMVar st $ \(S (Just p) (Just h) ctx@(DST c)) ->
+         assert (c /= nullPtr) $ do
+           hClose h
+           sha1 <- fmap (>>= toHex) (evalStateT final ctx)
+           let fname = spool ++ "/" ++ sha1
+           renameFile p fname
+           return (S Nothing Nothing ctx, sha1)
      say 2 5 0 (sha1 ++ " message accepted for delivery")
   `fallback`
      say 4 5 1 "requested action aborted: error in processing"
 
-handlePayload _ f ResetState = cleanupSpool >> f ResetState
-handlePayload _ f Shutdown   = cleanupSpool >> f Shutdown
+handlePayload _ f ResetState = clearState >> f ResetState
+handlePayload _ f Shutdown   = clearState >> f Shutdown
 handlePayload _ f e = f e
 
-feeder :: WriteHandle -> DataHandler
-feeder _ buf@(Buf _ _ 0) = return (Nothing, buf)
-feeder hOut buf@(Buf _ ptr n) = do
+feeder :: DataHandler
+feeder buf@(Buf _ _ 0) = return (Nothing, buf)
+feeder buf@(Buf _ ptr n) = do
   xs <- liftIO (peekArray (fromIntegral n) ptr)
   let theEnd   = map (toEnum . fromEnum) "\r\n.\r\n"
       (eod, i) = case strstr theEnd xs of
                    Nothing -> (False, max 0 (n - 4))
                    Just j -> (True, fromIntegral (j-3))
       i'       = fromIntegral i
-  liftIO (hPutBuf hOut ptr i')
-  sha1Engine getval_
-    >>= liftIO . execStateT (update' (ptr, i'))
-    >>= sha1Engine . flip setval
-  buf' <- liftIO (flush i buf)
+  st <- getState
+  buf' <- liftIO . withMVar st $ \(S _ (Just h) ctx@(DST c)) ->
+    assert (c /= nullPtr) $ do
+      hPutBuf h ptr i'
+      execStateT (update' (ptr, i')) ctx
+      flush i buf
   if not eod then return (Nothing, buf') else do
     r <- trigger Deliver
-    trigger ResetState
-    setSessionState HaveHelo
+    trigger ResetState          -- TODO: this doesn't really
+    setSessionState HaveHelo    --       belong here
     return (Just r, buf')
 
-cleanupSpool :: Smtpd ()
-cleanupSpool = do
-  sha1  <- sha1Engine getval
-  h     <- spoolHandle getval
-  fname <- spoolName getval
-  mapM ($ unsetval) [ sha1Engine, spoolHandle, spoolName, dataHandler ]
-  liftIO $ do
+clearState :: Smtpd ()
+clearState = do
+  st <- getState
+  liftIO . modifyMVar_ st $ \(S path h (DST ctx)) -> do
     let clean Nothing  _ = return ()
         clean (Just x) f = try (f x) >> return ()
-    clean sha1 (\(DST ctx) -> ctxDestroy ctx)
     clean h hClose
-    clean fname removeFile
+    clean path removeFile
+    when (ctx /= nullPtr) (ctxDestroy ctx)
+    return (S Nothing Nothing (DST nullPtr))

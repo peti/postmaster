@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.FSM.SessionState
-   Copyright   :  (c) 2005-02-10 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -11,7 +11,7 @@
 module Postmaster.FSM.SessionState where
 
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Local Variable: @SESSIONSTATE :: 'SessionState'@
@@ -20,7 +20,7 @@ sessionState :: SmtpdVariable
 sessionState = defineLocal "sessionstate"
 
 setSessionState :: SessionState -> Smtpd ()
-setSessionState sst = sessionState (`setval` sst)
+setSessionState sst = sessionState (`setVar` sst)
 
 getSessionState :: Smtpd SessionState
-getSessionState = sessionState (`getDefault` Unknown)
+getSessionState = sessionState (`getVarDef` Unknown)

@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.FSM.HeloName
-   Copyright   :  (c) 2005-02-10 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -13,7 +13,7 @@ module Postmaster.FSM.HeloName where
 import Control.Monad
 import Network ( HostName )
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Local Variable: @HELONAME :: 'HostName'@
@@ -26,11 +26,11 @@ heloName = defineLocal "heloname"
 
 initHeloName :: HostName -> EventT
 initHeloName n f e = do
-  when (e == Greeting) (heloName (`withval_` maybe n id))
+  when (e == Greeting) (heloName (`modifyVar_` maybe n id))
   f e
 
 -- |Will 'fail' when @HELONAME@ is not set.
 
 myHeloName :: Smtpd HostName
-myHeloName = heloName getval_
+myHeloName = heloName getVar_
 

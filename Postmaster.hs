@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster
-   Copyright   :  (c) 2005-02-10 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -25,7 +25,7 @@ module Postmaster
   , module Network
   , module Network.DNS
   , module System.IO.Driver
-  , module MonadEnv
+  , module Control.Monad.Env
   , module Text.ParserCombinators.Parsec.Rfc2821
   , module Syslog
   )
@@ -35,7 +35,7 @@ import Network ( PortID(..) )
 import Control.Monad.RWS hiding ( local )
 import Network.DNS hiding ( Debug )
 import Data.Typeable
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 import Syslog
 import System.IO.Driver ( Capacity )

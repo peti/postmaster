@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.DNSResolver
-   Copyright   :  (c) 2005-02-10 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -15,7 +15,7 @@ import Control.Monad.RWS hiding ( local )
 import Network.DNS
 import Data.Typeable
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 
 newtype DNSR = DNSR Resolver
              deriving (Typeable)
@@ -24,12 +24,12 @@ dnsResolver :: Variable
 dnsResolver = mkVar "dnsresolver"
 
 setDNSResolver :: Resolver -> EnvT ()
-setDNSResolver f = setval dnsResolver (DNSR f)
+setDNSResolver f = setVar dnsResolver (DNSR f)
 
 getDNSResolver :: Smtpd Resolver
 getDNSResolver = do
-  DNSR f <- local (getval dnsResolver)
-        >>= maybe (global $ getval_ dnsResolver) return
+  DNSR f <- local (getVar dnsResolver)
+        >>= maybe (global $ getVar_ dnsResolver) return
   return f
 
 queryA :: HostName -> Smtpd (Maybe [HostAddress])

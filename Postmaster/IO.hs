@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.IO
-   Copyright   :  (c) 2005-02-10 by Peter Simons
+   Copyright   :  (c) 2005-02-13 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -24,7 +24,7 @@ import Postmaster.Base
 import Text.ParserCombinators.Parsec.Rfc2821
 import System.IO.Driver
 import Control.Timeout
-import MonadEnv
+import Control.Monad.Env
 
 -- * Socket Handlers
 
@@ -67,16 +67,16 @@ data WriteTimeout = WriteTimeout Timeout
                   deriving (Typeable, Show)
 
 setReadTimeout :: Timeout -> Smtpd ()
-setReadTimeout = local . setval (mkVar "ReadTimeout")
+setReadTimeout = local . setVar (mkVar "ReadTimeout")
 
 getReadTimeout :: Smtpd Timeout
-getReadTimeout = local $ getDefault (mkVar "ReadTimeout") (90 * 1000000)
+getReadTimeout = local $ getVarDef (mkVar "ReadTimeout") (90 * 1000000)
 
 setWriteTimeout :: Timeout -> Smtpd ()
-setWriteTimeout = local . setval (mkVar "WriteTimeout")
+setWriteTimeout = local . setVar (mkVar "WriteTimeout")
 
 getWriteTimeout :: Smtpd Timeout
-getWriteTimeout = local $ getDefault (mkVar "WriteTimeout") (90 * 1000000)
+getWriteTimeout = local $ getVarDef (mkVar "WriteTimeout") (90 * 1000000)
 
 safeWrite :: IO a -> Smtpd a
 safeWrite f = do
@@ -88,16 +88,3 @@ safeReply hOut r = safeWrite (hPutStr hOut (show r))
 
 safeFlush :: WriteHandle -> Smtpd ()
 safeFlush hOut = safeWrite (hFlush hOut)
-
--- |Like 'bracket', but only performs the final action if
--- there was an exception raised by the middle bit.
-
-bracketOnError
-	:: IO a		-- ^ computation to run first (\"acquire resource\")
-	-> (a -> IO b)  -- ^ computation to run last (\"release resource\")
-	-> (a -> IO c)	-- ^ computation to run in-between
-	-> IO c		-- returns the value from the in-between computation
-bracketOnError cons dest f =
-  block $ do
-    a <- cons
-    catch (unblock (f a)) (\e -> dest a >> throw e)
