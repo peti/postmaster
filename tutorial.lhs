@@ -63,9 +63,10 @@ with this::
 > import Control.Monad.RWS hiding ( local )
 > -- import Text.ParserCombinators.Parsec
 > -- import Text.ParserCombinators.Parsec.Error
-> import PollResolver
+> import Network.DNS
 > import Rfc2821 hiding ( path )
 > import Syslog
+> import MonadEnv
 > import Postmaster
 
 The Postmaster daemon needs two things before it can run: A
@@ -82,9 +83,8 @@ however, we add a mechanism to modify the configuration
 conveniently, so that we can run different versions::
 
 > main' :: (Config -> Config) -> IO ()
-> main' f = do
->   cfg <- mkConfig
->   smtpdMain (f cfg) port
+> main' f =
+>   mkConfig $ (flip smtpdMain) port . f
 
 You have a working SMTP daemon now. Just start it as ``main'
 id`` and use a different shell to connect the server::
@@ -322,13 +322,13 @@ to call Postmaster with an input buffer that contains the
 entire SMTP dialogue::
 
 > runTest :: EventT -> [String] -> IO ()
-> runTest f xs = do
->   withSyslog "postmaster" [PID, PERROR] LOCAL7 $ do
->     cfg <- fmap (eventT f) mkConfig
+> runTest f xs =
+>   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
+>   mkConfig $ \cfg -> do
 >     let buf = xs >>= (++"\r\n")
 >         n   = length buf
 >     withArray (mapEnum buf) $ \p ->
->       runStateT (smtpdHandler cfg (p,n)) initSmtpd
+>       runStateT (smtpdHandler (eventT f cfg) (p,n)) initSmtpd
 >     return ()
 >   where
 >   mapEnum = map (toEnum . fromEnum)

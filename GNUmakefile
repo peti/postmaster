@@ -6,9 +6,8 @@ GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -debug -O -Wall \
             -idns -iemail -iblockio -ichild -ihopenssl \
-            '-\#include <adns.h>' '-\#include <sys/poll.h>' \
-	    '-\#include <openssl/evp.h>' \
-	    -isyslog -odir $(OBJDIR) -hidir $(OBJDIR)
+	    -imonadenv -isyslog \
+	    -odir $(OBJDIR) -hidir $(OBJDIR)
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
@@ -25,10 +24,22 @@ HDIFILES := \
 
 .PHONY: all
 
-SRCS := Postmaster.hs \
-	dns/PollResolver.hs dns/ADNS.hs child/Child.hs \
-	email/Rfc2234.hs email/Rfc2821.hs blockio/BlockIO.hs \
-	syslog/Syslog.hs hopenssl/Digest.hs
+SRCS := Postmaster.hs				\
+	blockio/BlockIO.hs			\
+	child/Child.hs				\
+	dns/Data/Endian.hs			\
+	dns/Network/DNS.hs			\
+	dns/Network/DNS/ADNS.hs			\
+	dns/Network/DNS/PollResolver.hs		\
+	dns/Network/IP/Address.hs		\
+	dns/System/Posix/GetTimeOfDay.hs	\
+	dns/System/Posix/Poll.hs		\
+	email/Rfc2234.hs			\
+	email/Rfc2821.hs			\
+	email/Rfc2822.hs			\
+	hopenssl/Digest.hs			\
+	monadenv/MonadEnv.hs			\
+	syslog/Syslog.hs
 
 all::	postmaster
 
@@ -111,9 +122,10 @@ redate::
 init-src::
 	@rm -f MT/monotonerc
 	@ln -s ../.monotonerc MT/monotonerc
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.dns co dns
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.email co email
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.blockio co blockio
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.child co child
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.syslog co syslog
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.dns co dns
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.email co email
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.hopenssl co hopenssl
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.monadenv co monadenv
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.syslog co syslog

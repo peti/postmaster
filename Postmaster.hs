@@ -35,13 +35,12 @@ import Control.Concurrent
 import Control.Monad.RWS hiding ( local )
 import Data.List ( isPrefixOf, nub )
 import Data.Unique
-import Data.Typeable
-import Data.FiniteMap
-import PollResolver
+import qualified Data.Map as FM
+import Network.DNS
+import MonadEnv
 import Rfc2821 hiding ( path )
 import BlockIO hiding ( loop )
 import Child ( timeout, Timeout )
-import Digest
 import Syslog
 
 -- * The @Smtpd@ Monad
@@ -114,7 +113,7 @@ data Config = Config
         -- ^ Initialized with 'getHostName' in 'mkConfig'.
         -- Used by several event handlers; 'SayHelo', for
         -- example.
-  , globalEnv    :: MVar Environment
+  , globalEnv    :: MVar Env
         -- ^ A global environment for the entire daemon.
         -- Initialized to 'emptyFM' by 'withConfig'.
   , sendmailPath :: FilePath
@@ -170,7 +169,7 @@ data SmtpdState = SmtpdState
         -- ^ Postmaster doesn't set this field at all; this
         -- is your problem. You can probably guess which
         -- event is supposed to do this.
-  , localEnv     :: Environment
+  , localEnv     :: Env
         -- ^ Transient environment for the TCP-session. May
         -- be initialized to your needs in the 'Greeting'
         -- event.
@@ -205,7 +204,7 @@ initSmtpd = SmtpdState
   , mailFrom     = nullPath
   , mailID       = 0
   , rcptTo       = []
-  , localEnv     = emptyFM
+  , localEnv     = FM.empty
   }
 
 -- ** Mail Targets
@@ -365,42 +364,6 @@ commitTarget t = yell (UnknownCommitTarget t) >> return t
 
 -- ** Generic Environment
 
-type Environment = FiniteMap String Val
-
-data Val = forall a. (Show a, Typeable a) => Val a
-
-instance Show Val where
-  show (Val a) = show a
-
-type EnvT a = State Environment a
-
-setval :: (Show a, Typeable a) => String -> a -> EnvT a
-setval key val = do
-  modify $ \env -> addToFM_C (\_ x -> x) env key (Val val)
-  return val
-
-unsetval :: String -> EnvT ()
-unsetval key = modify $ \env ->
-  delFromFM env key
-
-getval :: (Show a, Typeable a) => String -> EnvT (Maybe a)
-getval key = get >>= \env ->
-  case lookupFM env key of
-    Nothing      -> return Nothing
-    Just (Val a) -> return (cast a)
-
-getval_ :: (Show a, Typeable a) => String -> EnvT a
-getval_ key = getval key >>= maybe (fail badluck) return
-  where
-  badluck = showString "getval: value " $ key `shows` " does not exist"
-
-withval :: (Typeable a, Show a, Typeable b, Show b) =>
-	   String -> (Maybe a -> b) -> EnvT b
-withval key f = getval key >>= (setval key) . f
-
-tick :: String -> EnvT Int
-tick key = withval key (\c -> maybe 0 (+1) c)
-
 local :: (MonadState SmtpdState m) => EnvT a -> m a
 local f = do
   st <- get
@@ -409,13 +372,7 @@ local f = do
   return a
 
 global :: EnvT a -> Smtpd a
-global f = do
-  mv <- asks globalEnv
-  liftIO $
-    modifyMVar mv $ \env ->
-      return (swap (runState f env))
-  where
-  swap (a,e) = (e,a)
+global f = asks globalEnv >>= global' f
 
 -- ** DNS Resolving
 
@@ -756,7 +713,7 @@ smtpdHandler cfg (ptr,n) = do
 handleData :: SmtpdHandler SmtpReply
 handleData (ptr,n) = do
   buf <- liftIO (peekArray n ptr)
-  let eod = mapEnum "\r\n.\r\n"
+  let eod = map (toEnum . fromEnum) "\r\n.\r\n"
   case strstr eod buf of
     Nothing -> do let n' = max 0 (n - 4)
                   when (n' > 0) (trigger dataHandler (ptr, n'))
@@ -778,12 +735,12 @@ handleData (ptr,n) = do
 handleDialog :: SmtpdHandler SmtpReply
 handleDialog (ptr,n) = do
   buf <- liftIO (peekArray n ptr)
-  let crlf = mapEnum "\r\n"
+  let crlf = map (toEnum . fromEnum) "\r\n"
   case strstr crlf buf of
     Nothing -> return Nothing
     Just i  -> do
       sst <- gets sessionState
-      let line     = mapEnum (take i buf)
+      let line     = map (toEnum . fromEnum) (take i buf)
           (e,sst') = runState (smtpdFSM line) sst
       yell (Input line)
       r <- trigger eventHandler e
@@ -804,26 +761,19 @@ strstr tok = find 0
     | tok `isPrefixOf` ls = Just (pos + length tok)
     | otherwise           = find (pos + 1) xs
 
--- TODO: GHC 6.3 provides this already!
---
--- instance Show SockAddr where
---   show (SockAddrUnix str)     = str
---   show (SockAddrInet port ha) =
---     shows (RRAddr ha) . (':':) $ show port
-
 instance Show Callbacks where
   show _ = "<Postmaster.Callbacks>"
 
-instance Show (MVar Environment) where
+instance Show (MVar Env) where
   show _ = "<globalEnv>"
 
 instance Show ExternHandle where
   show _ = "<ExternHandle>"
 
-mkConfig :: IO Config
-mkConfig = do
-  resolver <- initResolver [ NoErrPrint, NoServerWarn ]
-  theEnv <- newMVar emptyFM
+mkConfig :: (Config -> IO a) -> IO a
+mkConfig f =
+  initResolver [NoErrPrint,NoServerWarn] $ \resolver -> do
+  theEnv <- newMVar emptyEnv
   whoami <- getHostName
   let cbs = CB { eventHandler = event
                , dataHandler  = feed
@@ -841,7 +791,7 @@ mkConfig = do
               , globalEnv    = theEnv
               , sendmailPath = "/usr/sbin/sendmail"
               }
-  return cfg
+  f cfg
 
 -- |Currently logs all messages with 'syslog' and priority
 -- 'Info'. Will be polished when I have nothing better to
