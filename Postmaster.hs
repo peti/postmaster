@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster
-   Copyright   :  (c) 2005-02-03 by Peter Simons
+   Copyright   :  (c) 2005-02-05 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -20,8 +20,10 @@
 
 module Postmaster
   ( module Postmaster.Base
-  , module Postmaster.Main
   , module Postmaster.Event
+  , module Postmaster.Extern
+  , module Postmaster.Main
+  , module Postmaster.Target
   , module Rfc2821
   , module Network.DNS
   , module MonadEnv
@@ -37,23 +39,17 @@ module Postmaster
 import Network ( PortID(..) )
 import Network.BSD ( getHostName )
 import Network.Socket hiding ( listen, shutdown, Debug, send, HostAddress )
--- import System.Exit ( ExitCode(..) )
--- import System.Process
--- import Control.Exception
--- import Control.Concurrent
 import Control.Monad.RWS hiding ( local )
--- import Data.Unique
--- import qualified Data.Map as FM
 import Network.DNS hiding ( Debug )
 import Data.Typeable
 import MonadEnv
 import Rfc2821 hiding ( path )
--- import BlockIO hiding ( loop )
--- import Child ( timeout, Timeout )
 import Syslog
 import Postmaster.Base
 import Postmaster.Main
 import Postmaster.Event
+import Postmaster.Extern
+import Postmaster.Target
 
 
 -- ----- Configure Emacs -----

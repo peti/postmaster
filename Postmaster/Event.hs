@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.Event
-   Copyright   :  (c) 2005-02-03 by Peter Simons
+   Copyright   :  (c) 2005-02-05 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -20,6 +20,7 @@ import System.IO
 import Network ( HostName )
 import System.Exit ( ExitCode(..) )
 import Postmaster.Base
+import Postmaster.Extern
 import Rfc2821 hiding ( path )
 import MonadEnv
 
@@ -128,7 +129,7 @@ setRcptTo :: [Target] -> Smtpd ()
 setRcptTo = local . setval "RcptTo"
 
 getRcptTo :: Smtpd [Target]
-getRcptTo = fmap (maybe [] id) (local $ getval_ "RcptTo")
+getRcptTo = fmap (maybe [] id) (local $ getval "RcptTo")
 
 addRcptTo :: Target -> Smtpd ()
 addRcptTo m = getRcptTo >>= setRcptTo . (m:)

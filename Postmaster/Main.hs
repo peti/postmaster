@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.Main
-   Copyright   :  (c) 2005-02-03 by Peter Simons
+   Copyright   :  (c) 2005-02-05 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -205,19 +205,11 @@ handleDialog (ptr,n) = do
         _                                   -> st { sessionState = sst' }
       return (Just (r, i))
 
--- |A version of 'yell' which works outside of 'Smtpd'. It
--- writes directly to 'logStream'.
-
-yellIO :: (MonadIO m) => Config -> SmtpdState -> LogEvent -> m ()
-yellIO cfg st e = do                    -- TODO
-  liftIO ((logStream (callbacks cfg)) (LogMsg 0 st e))
-
-
 mkConfig :: (Config -> IO a) -> IO a
 mkConfig f =
   initResolver [NoErrPrint,NoServerWarn] $ \resolver -> do
   theEnv <- newMVar emptyEnv
-  let cbs = CB { eventHandler = event
+  let cbs = CB { eventHandler = mkEvent "peti.cryp.to"
                , dataHandler  = feed
                , logStream    = syslogger
                , queryDNS     = resolver

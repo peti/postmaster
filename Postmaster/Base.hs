@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Base
-   Copyright   :  (c) 2005-02-03 by Peter Simons
+   Copyright   :  (c) 2005-02-05 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -16,7 +16,6 @@ import Foreign
 import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import System.Exit ( ExitCode(..) )
-import System.Process
 import Control.Exception
 import Control.Concurrent
 import Control.Monad.RWS hiding ( local )
@@ -25,7 +24,8 @@ import Network.DNS
 import MonadEnv
 import Data.Typeable
 import Rfc2821 hiding ( path )
-import Child ( timeout, Timeout )
+import Child
+import Postmaster.Extern
 
 -- * The @Smtpd@ Monad
 
@@ -176,84 +176,6 @@ data MailerStatus
   | Succeeded
   deriving (Show)
 
-type ExternHandle = MVar (Handle, Handle, Handle, ProcessHandle)
-
--- |Create 'Pipe' target and add it to 'rcptTo'. The mailbox
--- parameter is just annotation; but it's a good idea to use
--- it to associate the original e-mail address with the
--- target. If nothing else, it makes the log messages more
--- informative. Note that Postmaster pipes the data section
--- into the program /unmodified/. CRLF line-endings, escaped
--- dot-lines, and all that.
-
-pipe :: [Mailbox] -> FilePath -> [String] -> Smtpd SmtpReply
-pipe _   []   _   = fail "Postmaster.pipe: path may not be empty"
-pipe {- rs path args -} _ _ _ = do
---    let target = Target rs (Pipe path args) Ready
--- TODO:  modify (\st -> st { rcptTo = target : (rcptTo st) })
-  say 2 5 0 "recipient ok"
-
--- |Wrapper for 'pipe' which runs the command with
--- @\/bin\/sh -c@ so that you can use in-\/output
--- redirection, piping, etc. This wrapper will also convert
--- the data section to standard text. Meaning that
--- \"@\\r\\n@\" is converted to \"@\\n@\" and
--- \"@\\r\\n..\\r\\n@\" is unquoted to \"@\\r\\n.\\r\\n@\".
--- Procmail needs that, for example.
-
-shell :: [Mailbox] -> String -> Smtpd SmtpReply
-shell   _   [] = fail "Postmaster.shell: command may not be empty"
-shell mbox cmd = pipe mbox "/bin/sh" [ "-c", cmd']
-  where
-  cmd'   = toText ++ " | " ++ cmd
-  toText = "sed -e 's/\r$//' -e 's/^\\.\\.$/./'"
-
--- |Create a 'Relay' target and add it to 'rcptTo'.
--- Currently, this just causes execution of 'sendmailPath'.
--- with appropriate flags.
-
-relay :: [Mailbox] -> Smtpd SmtpReply
-relay {- rs -} _ = do
---    let target = Target rs Relay Ready
--- TODO:  modify (\st -> st { rcptTo = target : (rcptTo st) })
-  say 2 5 0 "recipient ok"
-
--- |Run an external process and store its handle in an
--- 'MVar' with a finalizer attached to it that will close
--- the handles and kill the process when the MVar falls out
--- of scope. The process is run with \"@\/@\" as current
--- directory and an /empty/ enviroment. (This may change.)
-
-extern :: FilePath -> [String] -> IO ExternHandle
-extern path args = do
-  r <- runInteractiveProcess path args (Just "/") (Just [])
-  mv <- newMVar r
-  addMVarFinalizer mv (catch (cleanup r) (const (return ())))
-  let (hin,_,_,_) = r
-  hSetBuffering hin NoBuffering
-  return mv
-    where
-    cleanup (hin, hout, herr, pid) = do
-      terminateProcess pid
-      hClose hin >> hClose hout >> hClose herr
-      safeWaitForProcess pid
-      return ()
-
--- |Wait 30 seconds max. If the process hasn't terminated by
--- then, throw an exception. If the child process has been
--- terminated by a signal, return @ExitFailure 137@. This is
--- a kludge. So it will probably be in here forever.
-
-safeWaitForProcess :: ProcessHandle -> IO ExitCode
-safeWaitForProcess pid =
-  timeout maxwait loop >>= maybe badluck return
-    where
-    loop    = catch loop' (\_ -> return (ExitFailure 137))
-    loop'   = wait >> getProcessExitCode pid >>= maybe loop' return
-    wait    = threadDelay 1000000 -- 1 second
-    maxwait = 30000000            -- 30 seconds
-    badluck = fail "timeout while waiting for external process"
-
 -- ** Generic Environment
 
 local :: (MonadState SmtpdState m) => EnvT a -> m a
@@ -317,6 +239,15 @@ yell e = do
   sid <- local $ fmap (maybe 0 id) (getval "SessionID")
   st <- get
   tell [LogMsg sid st e]
+
+-- |A version of 'yell' which works outside of 'Smtpd'. It
+-- writes directly to 'logStream'.
+
+yellIO :: (MonadIO m) => Config -> SmtpdState -> LogEvent -> m ()
+yellIO cfg st e = do
+  let getSid = fmap (maybe 0 id) (getval "SessionID")
+      sid    = fst . runState getSid $ localEnv st
+  liftIO ((logStream (callbacks cfg)) (LogMsg sid st e))
 
 -- * Helpers
 
