@@ -21,6 +21,7 @@
 module Postmaster
   ( module Postmaster.Base
   , module Postmaster.Main
+  , module Postmaster.Event
   , module Rfc2821
   , module Network.DNS
   , module MonadEnv
@@ -52,6 +53,7 @@ import Rfc2821 hiding ( path )
 import Syslog
 import Postmaster.Base
 import Postmaster.Main
+import Postmaster.Event
 
 
 -- ----- Configure Emacs -----

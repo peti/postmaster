@@ -30,6 +30,7 @@ MONODIRS := blockio child dns email hopenssl monadenv syslog
 SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
 	Postmaster/Main.hs			\
+	Postmaster/Event.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
 	dns/Data/Endian.hs			\

@@ -27,6 +27,7 @@ import Network.BSD ( getHostName )
 import Network.DNS
 import Foreign
 import Postmaster.Base
+import Postmaster.Event
 import Rfc2821
 import Syslog
 import BlockIO hiding ( loop )
