@@ -7,7 +7,6 @@ function ignore_file(name)
   if (string.find(name, "^%.objs/")) then return true end
   if (string.find(name, "^_darcs/")) then return true end
   if (string.find(name, "^docs/")) then return true end
-  if (string.find(name, "^hopenssl/")) then return true end
   if (string.find(name, "^postmaster$")) then return true end
   if (string.find(name, "^postmaster-.*%.tar%.gz")) then return true end
   if (string.find(name, "^syslog/")) then return true end

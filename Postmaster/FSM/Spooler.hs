@@ -25,7 +25,7 @@ import Postmaster.FSM.MailID
 import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 import System.IO.Driver
-import Digest
+import OpenSSL.Digest
 import Data.Typeable
 
 data Spooler = S (Maybe FilePath) (Maybe WriteHandle) DigestState
