@@ -434,40 +434,6 @@ under Unix do. ::
   local  :: EnvT a -> Smtpd a
   global :: EnvT a -> Smtpd a
 
-Experimental
-''''''''''''
-::
-
-> local_host_names :: [String]
-> local_host_names =
->   [ "ahlgrimm.info"
->   , "peti.cryp.to"
->   , "cryp.to"
->   , "evildoer.de"
->   , "klaebe.net"
->   , "babel.de"
->   , "eilebrecht.net"
->   , "babel.org"
->   , "polizei.net"
->   , "eilebrecht.us"
->   , "eilebrecht.biz"
->   , "babylon.pfm-mainz.de"
->   , "eilebrecht.org"
->   , "lists.cryp.to"
->   , "evil-doer.de"
->   , "petix.cryp.to"
->   , "eilebrecht.info"
->   , "content-management.info"
->   , "berlininfo.info"
->   , "delf.nl"
->   ]
-
-> peti :: EventT
-> peti = badass . localHosts local_host_names . relayAll
->   where
->   relayAll _ (AddRcptTo mbox) = relay [mbox]
->   relayAll f e                = f e
-
 Disallow Routing Addresses
 ''''''''''''''''''''''''''
 
@@ -696,7 +662,7 @@ Notes
 Change me::
 
 > main :: IO ()
-> main = run peti
+> main = run (badass . stdConfig)
 
 References
 ----------
