@@ -51,9 +51,15 @@ mkEvent heloName
   $ event
 
 
-----------------------------------------------------------------------
--- * Combinator Library
-----------------------------------------------------------------------
+-- ** Local Variable: @SessionState@
+
+setSessionState :: SessionState -> Smtpd ()
+setSessionState = local . setval "SessionState"
+
+-- |Will 'fail' when @SessionState@@ is not set.
+
+getSessionState :: Smtpd SessionState
+getSessionState = local $ withval "SessionState" $ maybe Unknown id
 
 -- ** Local Variable: @HeloName@
 
@@ -67,7 +73,7 @@ setHeloName n f e = do
 -- |Will 'fail' when @HeloName@ is not set.
 
 myHeloName :: Smtpd HostName
-myHeloName = local (getval_ "HeloName")
+myHeloName = local $ getval_ "HeloName"
 
 
 -- ** Local Variable: @IsEhloPeer@
@@ -102,7 +108,7 @@ setPeerHelo f e = do
 -- |Will 'fail' when @PeerHelo@ is not set.
 
 getPeerHelo :: Smtpd HostName
-getPeerHelo = local (getval_ "PeerHelo")
+getPeerHelo = local $ getval_ "PeerHelo"
 
 
 -- ** Local Variable: @MailFrom@
@@ -120,7 +126,7 @@ setMailFrom f e = do
   return r
 
 getMailFrom :: Smtpd Mailbox
-getMailFrom = local (getval_ "MailFrom")
+getMailFrom = local $ getval_ "MailFrom"
 
 
 -- ** Local Variable: @RcptTo@
@@ -140,7 +146,7 @@ addRcptTo m = getRcptTo >>= setRcptTo . (m:)
 -- |Produce a unique 'ID' using a global counter.
 
 getUniqueID :: Smtpd ID
-getUniqueID = global (tick "UniqueID")
+getUniqueID = global $ tick "UniqueID"
 
 -- *** Local Variable: @SessionID@
 
@@ -156,7 +162,7 @@ setSessionID f e = do
 -- |Will 'fail' when @SessionID@ is not set.
 
 mySessionID :: Smtpd ID
-mySessionID = local (getval_ "SessionID")
+mySessionID = local $ getval_ "SessionID"
 
 
 -- *** Local Variable: @MailID@
@@ -176,10 +182,9 @@ setMailID f e = do
 -- |Will 'fail' when @MailID@ is not set.
 
 getMailID :: Smtpd ID
-getMailID = local (getval_ "MailID")
+getMailID = local $ getval_ "MailID"
 
-
--- ** Announce ESMTP Capability
+-- ** Combinator: Announce ESMTP Capability
 
 -- |Append the given ESMTP keyword to the reply produced
 -- during 'SayEhlo'.

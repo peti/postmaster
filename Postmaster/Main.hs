@@ -32,6 +32,11 @@ import BlockIO hiding ( loop )
 import Child
 import MonadEnv
 
+-- |Our maximum line length: 1024 characters.
+
+ioBufferSize :: Int
+ioBufferSize = 1024
+
 -- |An @SmtpdHandler@ is a 'Handler' as defined in
 -- "BlockIO", except for that it is a 'RWST' monad instead
 -- of a 'StateT' monad.
@@ -74,13 +79,13 @@ smtpdMain f port = do
   main cfg (s,sa) = do
     setSocketOption s KeepAlive 1
     h <- socketToHandle s ReadWriteMode
-    let size = Just (ioBufferSize cfg)
+    let size = Just ioBufferSize
     hSetBuffering h (BlockBuffering size)
     let cfg' = cfg { peerAddr  = Just sa }
     bracket_
       (yellIO cfg' initSmtpd (AcceptConn sa))
       (yellIO cfg' initSmtpd (DropConn sa) >> hClose h)
-      (runSmtpd h h cfg')
+      (runSmtpd ioBufferSize h h cfg')
 
 -- |Run a SMTP server with the given configuration. The
 -- function will log 'StartSession', then trigger
@@ -93,10 +98,10 @@ smtpdMain f port = do
 -- 'smtpdMain', which is by-passed, doesn't do it for you in
 -- this case.
 
-runSmtpd :: Handle -> Handle -> Config -> IO ()
-runSmtpd hIn hOut cfg = do
-  (r, st) <- runStateT (withConfig cfg (trigger eventHandler Greeting)) initSmtpd
-  yellIO cfg initSmtpd (StartSession cfg)
+runSmtpd :: Int -> Handle -> Handle -> Config -> IO ()
+runSmtpd bufSize hIn hOut cfg = do
+  (r, st, w) <- runRWST (trigger eventHandler Greeting) cfg initSmtpd
+  liftIO $ mapM_ (logStream (callbacks cfg)) w
   let logM = yellIO cfg st
       to   = writeTimeout st
   let safeIO f = timeout to f >>= maybe (fail "write timeout") return
@@ -104,10 +109,9 @@ runSmtpd hIn hOut cfg = do
   safeIO (hPutStr hOut (show r) >> hFlush hOut)
   let Reply (Code rc _ _) _ = r
   if rc /= Success then return () else do
-    let size = ioBufferSize cfg
-        main = smtpdHandler hOut cfg
+    let main = smtpdHandler hOut cfg
     catch
-      (runLoopNB readTimeout hIn size main st >> return ())
+      (runLoopNB readTimeout hIn bufSize main st >> return ())
       (\e -> case e of
          IOException ie ->
            if isTimeout ie then logM ReadTimeout else
@@ -135,7 +139,7 @@ smtpdHandler hOut cfg (ptr,n) = do
                  liftIO (timeout to f) >>=
                  maybe (fail "write timeout") return
       shutdown = safeIO (hFlush hOut >> fail "shutdown")
-  sst <- gets sessionState
+  sst <- withConfig cfg getSessionState
   r' <- if sst == HaveData
            then withConfig cfg (handleData (ptr,n))
            else withConfig cfg (handleDialog (ptr,n))
@@ -177,7 +181,7 @@ handleData (ptr,n) = do
     Just i  -> do trigger dataHandler (ptr, (i-3))
                   r <- trigger eventHandler Deliver
                   trigger eventHandler ResetState
-                  modify (\st -> st { sessionState = HaveHelo })
+                  setSessionState HaveHelo
                   return (Just (r, i))
 
 -- |If there is one, consume the first line from the buffer
@@ -193,16 +197,16 @@ handleDialog (ptr,n) = do
   case strstr crlf buf of
     Nothing -> return Nothing
     Just i  -> do
-      sst <- gets sessionState
+      sst <- getSessionState
       let line     = map (toEnum . fromEnum) (take i buf)
           (e,sst') = runState (smtpdFSM line) sst
       yell (Input line)
       r <- trigger eventHandler e
-      modify $ \st -> case r of
-        Reply (Code Unused0 _ _) _          -> error "Unused?"
-        Reply (Code TransientFailure _ _) _ -> st
-        Reply (Code PermanentFailure _ _) _ -> st
-        _                                   -> st { sessionState = sst' }
+      case r of
+        Reply (Code Unused0 _ _) _          -> fail "Unused?"
+        Reply (Code TransientFailure _ _) _ -> return ()
+        Reply (Code PermanentFailure _ _) _ -> return ()
+        _                                   -> setSessionState sst'
       return (Just (r, i))
 
 mkConfig :: (Config -> IO a) -> IO a
@@ -216,7 +220,6 @@ mkConfig f =
                }
       cfg = Config
               { callbacks    = cbs
-              , ioBufferSize = 1024
               , peerAddr     = Nothing
               , globalEnv    = theEnv
               , sendmailPath = "/usr/sbin/sendmail"

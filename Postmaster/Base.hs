@@ -88,11 +88,6 @@ data Callbacks = CB
 
 data Config = Config
   { callbacks    :: Callbacks
-  , ioBufferSize :: Int
-        -- ^ This value determines the size of the (static!)
-        -- buffers for I\/O. Thus, it also determines the
-        -- maximum line length Postmaster will accept. The
-        -- default is 1024 bytes.
   , globalEnv    :: MVar Env
         -- ^ A global environment for the entire daemon.
         -- Initialized to 'emptyFM' by 'withConfig'.
@@ -111,9 +106,7 @@ type ID = Int
 -- ** Server State
 
 data SmtpdState = SmtpdState
-  { sessionState :: SessionState
-        -- ^ Set by 'handleDialog'; do not modify.
-  , ioBufferGap  :: Int
+  { ioBufferGap  :: Int
         -- ^ I\/O driver internal. Don't touch at all.
   , readTimeout  :: Timeout
         -- ^ The default are 90 seconds. You can change the
@@ -151,8 +144,7 @@ data SmtpdState = SmtpdState
 
 initSmtpd :: SmtpdState
 initSmtpd = SmtpdState
-  { sessionState = Unknown
-  , ioBufferGap  = 0
+  { ioBufferGap  = 0
   , readTimeout  = 90*1000000
   , writeTimeout = 90*1000000
   , localEnv     = FM.empty
