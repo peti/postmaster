@@ -4,7 +4,7 @@ A Walk Through "Config.hs"
 ==========================
 
 :Author: Peter Simons <simons@cryp.to>
-:Date:   2005-02-06
+:Date:   2005-02-09
 :Note:   This text is *nowhere* near being complete.
 
 .. contents::
@@ -103,171 +103,14 @@ the system log file you've configured for ``syslog(3)``)::
   SID 1: EventHandlerResult "default" Greeting 220
 
 
-Configuring Mail Targets
-------------------------
-
-All this gimmickery still hasn't delivered a single e-mail
-yet, though. To accomplish this, we have to accept the
-appropriate ``AddRcptTo`` events and map them to a "mail
-target". Postmaster knows two primitive targets which you
-can create with the functions::
-
-  pipe  :: [Mailbox] -> FilePath -> [String] -> Smtpd SmtpReply
-  relay :: [Mailbox] -> Smtpd SmtpReply
-
-Both functions will always reply with 250; you don't need to
-check the return codes. Once a target (or several of them)
-has been assigned, the default configuration will allow the
-DATA command so that the transaction may take place.
-Everything after that is handled automatically. If want to
-write a *minimal* MTA, ``AddRcptTo`` is the only event you
-need to care about.
-
-As you will have guessed, ``pipe`` writes the data section
-into an arbitrary external command. This *may* be a local
-delivery, but you may as well pipe the message into another
-MTA for further relaying. [3]_ That's up to you.
-
-The ``relay`` target forwards the data section to the given
-addresses; currently by means of calling another MTA. There
-is no internal outbound delivery yet, so if you want to
-relay, you'll need to have [Sendmail]_ installed.
-
-The conceptional difference between ``pipe`` and ``relay``
-is that Postmaster will batch relaying whereas a ``pipe``
-target is opaque for the daemon. If you want to batch pipe
-targets, you'd have to write it yourself as an event
-handler. To make that possible, the ``[Mailbox]`` argument
-to ``pipe`` can be used as annotation. Postmaster itself
-doesn't use it. Setting it nonetheless is a good idea
-because it creates nicer log messages, but you can safely
-pass ``[]``.
-
-Alright, the simplest possible MTA you can configure would
-be this::
-
- TODO: broken with spooler
-
- > rfc2821 :: FilePath -> EventT
- > rfc2821 mbox _ (AddRcptTo (Mailbox [] "postmaster" [])) = do
- >   let path = "/bin/sh"
- >       args = [ "-c", "cat >>" ++ mbox ]
- >   pipe [] path args
- > rfc2821 _ f e = f e
-
-You are fully [RFC2821]_ compliant now. Let's try it out!
-
-Running Tests
-'''''''''''''
-
-Remember that all of Postmaster is nothing but an ordinary
-monad. You can run any function in any context you'd like,
-all behavior is determined by the configuration and the
-initial state you pass. When testing configurations, for
-example, you certainly don't want to ``telnet`` to the
-daemon ever time. One way to run a test within ``ghci`` is
-to call Postmaster with an input buffer that contains the
-entire SMTP dialogue::
-
- TODO: Doesn't work in new design!
-
- | runTest :: EventT -> [String] -> IO ()
- | runTest f xs =
- |   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
- |   mkConfig $ \cfg -> do
- |     let buf = xs >>= (++"\r\n")
- |         n   = length buf
- |     withArray (mapEnum buf) $ \p ->
- |       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
- |     return ()
- |   where
- |   mapEnum = map (toEnum . fromEnum)
-
-Given a test session like this ... ::
-
-> testMsg :: [String]
-> testMsg = [ "EHLO [127.0.0.1]"
->           , "MAIL FROM:<>"
->           , "RCPT TO:<postmaster>"
->           , "DATA"
->           , "This text is free-style because"
->           , "it goes into cat anyway."
->           , "."
->           ]
-
-... you can run Postmaster with the ``runTest`` helper.
-That's a good way to test our ``rfc2821`` MTA from above::
-
- | testRfc2821 :: FilePath -> IO ()
- | testRfc2821 path = runTest (rfc2821 path) testMsg
-
-Run it with ``testRfc2821 "/tmp/important-mail"`` and you'll
-have the data section in that file. Repeated runs will
-append at the end. If you receive several e-mail messages
-simultaneously, what you will, then all processes append at
-the end at the same time. So actually doing that is probably
-not a good idea.
-
-Procmail As Local Mailer
-''''''''''''''''''''''''
-
-Back to mail targets. Postmaster provides another useful
-combinator for creating them, the function::
-
-  shell :: [Mailbox] -> String -> Smtpd SmtpReply
-  shell mbox cmd = pipe mbox "/bin/sh" ["-c", cmd']
-    where
-    cmd'   = toText ++ " | " ++ cmd
-    toText = "sed -e 's/\r$//' -e 's/^\\.\\.$/./'"
-
-Besides running the command with ``/bin/sh -c`` for you, the
-function will also convert the ``\r\n`` line delimiters and
-unquote the ``\r\n..\r\n`` special. [4]_ Some local mailers
-need that, most notably [Procmail]_.
-
-Which happens to be a much better local mailer than ``cat``
-is. Not only does it employ file locking, it also comes with
-good mechanisms to sort messages into different folders,
-re-send them somewhere else, etc. To build a local mailer
-for Procmail, all we have to do is to figure out the correct
-command-line arguments::
-
- todo: broken with spool
-
- > procmail :: [Mailbox] -> String -> String -> Smtpd SmtpReply
- > procmail _ [] _ = fail "procmail: need non-empty user name"
- > procmail mbox user arg = do
- >   from <- getMailFrom
- >   uid <- liftIO getRealUserID
- >   let cmd  = concat $ intersperse " "
- >              [ "procmail"
- >              , if uid == 0 then "-o" else []
- >              , "-Y"        -- ignore Content-Length header
- >              , "-f", show (show from)
- >              , "-a", show arg
- >              , "-d", show user
- >              ]
- >   shell mbox cmd
-
-We ``show`` the command-line arguments to Procmail to make
-sure the empty string will work okay. ``show`` will also
-escape all double quotes, backslashes, etc. for us. The
-``-o`` flag tells Procmail to remove all "``From <envelope>
-<date>``" lines the mail contains in favor of our locally
-generated one, because the others are necessarily fakes. If
-we'd do that while *not* running as superuser, though,
-Procmail would consider the one we set a fake too, and would
-use the Unix username it's running under as envelope. Then
-our envelope information would be lost.
-
 Standard Unix Configuration
 '''''''''''''''''''''''''''
 
-At last we can configure a real MTA that actually does
-something. As a simple example, let us reimplement the way
-MTAs have worked traditionally under Unix: (1) The MTA has a
-list of "local hostnames". Any recipient which is not in one
-of these domains is refused. (2) Recipients *in* the local
+Let's configure a real MTA that actually does something. As
+a simple example, let us reimplement the way MTAs have
+worked traditionally under Unix: (1) The MTA has a list of
+"local hostnames". Any recipient which is not in one of
+these domains is refused. (2) Recipients *in* the local
 domains are delivered to the Unix user with the same name as
 the local part. (3) All system users are valid e-mail
 recipients. (4) Everything else needs an manual entry a.k.a.
@@ -311,10 +154,10 @@ Another function that guards access to ``f`` on the
 
  TODO: broken with spooler
 
- > localProcmail :: EventT
- > localProcmail _ (AddRcptTo mbox@(Mailbox _ lpart _)) =
- >   procmail [mbox] lpart []
- > localProcmail f e = f e
+ | localProcmail :: EventT
+ | localProcmail _ (AddRcptTo mbox@(Mailbox _ lpart _)) =
+ |   procmail [mbox] lpart []
+ | localProcmail f e = f e
 
 Done. ::
 
@@ -335,8 +178,8 @@ and run your MTA::
 > stdMTA :: IO ()
 > stdMTA = run stdConfig
 
-> runStdMTA :: [String] -> IO ()
-> runStdMTA = undefined -- runTest stdConfig
+ | runStdMTA :: [String] -> IO ()
+ | runStdMTA = runTest stdConfig
 
 A good test session should be::
 
