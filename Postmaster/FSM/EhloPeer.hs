@@ -23,10 +23,10 @@ handleEhloPeer :: EventT
 handleEhloPeer f e = do
   r <- f e
   case (e, isSuccess r) of
-    (SayEhlo _, True) -> ehloPeer (`setval` True)
-    (SayHelo _, True) -> ehloPeer (`setval` False)
+    (SayEhlo _, True) -> ehloPeer (`setVar` True)
+    (SayHelo _, True) -> ehloPeer (`setVar` False)
     (_, _)            -> return ()
   return r
 
 isEhloPeer :: Smtpd Bool
-isEhloPeer = ehloPeer (`getDefault` False)
+isEhloPeer = ehloPeer (`getVarDef` False)

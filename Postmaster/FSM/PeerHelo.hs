@@ -27,12 +27,12 @@ handlePeerHelo :: EventT
 handlePeerHelo f e = do
   r <- f e
   case (e, isSuccess r) of
-    (SayEhlo peer, True) -> peerHelo (`setval` peer)
-    (SayHelo peer, True) -> peerHelo (`setval` peer)
+    (SayEhlo peer, True) -> peerHelo (`setVar` peer)
+    (SayHelo peer, True) -> peerHelo (`setVar` peer)
     (_, _)               -> return ()
   return r
 
 -- |Will 'fail' when @PEERHELO@ is not set.
 
 getPeerHelo :: Smtpd HostName
-getPeerHelo = peerHelo getval_
+getPeerHelo = peerHelo getVar_

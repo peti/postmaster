@@ -354,7 +354,7 @@ Dynamic Blacklisting
 >             stale  = \(TS ts _) -> delta ts < now
 >             clean  = reverse . dropWhile stale . reverse
 >             expire = maybe [] clean
->         blackl <- global (withval (mkVar "blacklist") expire)
+>         blackl <- global (modifyVar (mkVar "blacklist") expire)
 >         if all (\(TS _ a) -> a /= addr) blackl
 >             then return r
 >             else do yell (Msg (msg sa))
@@ -376,7 +376,7 @@ whenever we feel like it::
 >       now <- liftIO getClockTime
 >       let a'     = TS now a
 >           append = maybe [a'] (\as -> a' : as)
->       global (withval (mkVar "blacklist") append)
+>       global (modifyVar_ (mkVar "blacklist") append)
 >       return ()
 >   where
 >   msg = showString "black-listing peer: " . show

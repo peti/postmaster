@@ -18,7 +18,7 @@ peerAddr :: Variable
 peerAddr = mkVar "peeradr"
 
 setPeerAddr :: SockAddr -> EnvT ()
-setPeerAddr = setval peerAddr
+setPeerAddr = setVar peerAddr
 
 getPeerAddr :: Smtpd (Maybe SockAddr)
-getPeerAddr = local (getval peerAddr)
+getPeerAddr = local (getVar peerAddr)

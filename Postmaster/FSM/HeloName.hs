@@ -26,11 +26,11 @@ heloName = defineLocal "heloname"
 
 initHeloName :: HostName -> EventT
 initHeloName n f e = do
-  when (e == Greeting) (heloName (`withval_` maybe n id))
+  when (e == Greeting) (heloName (`modifyVar_` maybe n id))
   f e
 
 -- |Will 'fail' when @HELONAME@ is not set.
 
 myHeloName :: Smtpd HostName
-myHeloName = heloName getval_
+myHeloName = heloName getVar_
 

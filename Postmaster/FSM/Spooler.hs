@@ -52,19 +52,19 @@ handlePayload spool _ StartData =
           rc <- digestInit ctx md
           when (rc == 0) (fail "can't initialize SHA1 digest")
           return (h, DST ctx))
-     spoolHandle (`setval` h)
-     spoolName (`setval` path)
-     sha1Engine (`setval` sha1)
+     spoolHandle (`setVar` h)
+     spoolName (`setVar` path)
+     sha1Engine (`setVar` sha1)
      setDataHandler (feeder h)
      say 3 5 4 "terminate data with <CRLF>.<CRLF>"
   `fallback`
      say 4 5 1 "requested action aborted: error in processing"
 
 handlePayload spool _ Deliver =
-  do spoolHandle getval_ >>= liftIO . hClose >> spoolHandle unsetval
-     ctx <- sha1Engine getval_
+  do spoolHandle getVar_ >>= liftIO . hClose >> spoolHandle unsetVar
+     ctx <- sha1Engine getVar_
      sha1 <- fmap (>>= toHex) (liftIO (evalStateT final ctx))
-     fname <- spoolName getval_
+     fname <- spoolName getVar_
      let fname' = spool ++ "/" ++ sha1
      liftIO (renameFile fname fname')
      say 2 5 0 (sha1 ++ " message accepted for delivery")
@@ -85,9 +85,9 @@ feeder hOut buf@(Buf _ ptr n) = do
                    Just j -> (True, fromIntegral (j-3))
       i'       = fromIntegral i
   liftIO (hPutBuf hOut ptr i')
-  sha1Engine getval_
+  sha1Engine getVar_
     >>= liftIO . execStateT (update' (ptr, i'))
-    >>= sha1Engine . flip setval
+    >>= sha1Engine . flip setVar
   buf' <- liftIO (flush i buf)
   if not eod then return (Nothing, buf') else do
     r <- trigger Deliver
@@ -97,10 +97,10 @@ feeder hOut buf@(Buf _ ptr n) = do
 
 cleanupSpool :: Smtpd ()
 cleanupSpool = do
-  sha1  <- sha1Engine getval
-  h     <- spoolHandle getval
-  fname <- spoolName getval
-  mapM ($ unsetval) [ sha1Engine, spoolHandle, spoolName, dataHandler ]
+  sha1  <- sha1Engine getVar
+  h     <- spoolHandle getVar
+  fname <- spoolName getVar
+  mapM ($ unsetVar) [ sha1Engine, spoolHandle, spoolName, dataHandler ]
   liftIO $ do
     let clean Nothing  _ = return ()
         clean (Just x) f = try (f x) >> return ()

@@ -20,7 +20,7 @@ sessionState :: SmtpdVariable
 sessionState = defineLocal "sessionstate"
 
 setSessionState :: SessionState -> Smtpd ()
-setSessionState sst = sessionState (`setval` sst)
+setSessionState sst = sessionState (`setVar` sst)
 
 getSessionState :: Smtpd SessionState
-getSessionState = sessionState (`getDefault` Unknown)
+getSessionState = sessionState (`getVarDef` Unknown)

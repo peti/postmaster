@@ -17,23 +17,22 @@
    generates these functions:
 
    > getFoo :: Smtpd (Maybe Int)
-   > getFoo = local (getval (mkVar "foo"))
+   > getFoo = local (getVar (mkVar "foo"))
    >
    > getFoo_ :: Smtpd Int
-   > getFoo_ = local (getval_ (mkVar "foo"))
+   > getFoo_ = local (getVar_ (mkVar "foo"))
    >
    > setFoo :: Int -> Smtpd ()
-   > setFoo = local . setval (mkVar "foo")
+   > setFoo = local . setVar (mkVar "foo")
    >
    > unsetFoo :: Smtpd ()
-   > unsetFoo = local (unsetval (mkVar "foo"))
+   > unsetFoo = local (unsetVar (mkVar "foo"))
 
  -}
 
 module Postmaster.Meta where
 
-import Language.Haskell.TH
-import Data.Char
+import Language.Haskell.TH hiding ( global )
 import Control.Monad.Env
 import Postmaster.Base
 
@@ -43,30 +42,34 @@ mkBody e = [ clause [] (normalB e) [] ]
 maybeT :: TypeQ -> TypeQ
 maybeT = appT (conT (mkName "Maybe"))
 
+maybeAtoA :: TypeQ -> TypeQ
+maybeAtoA a = arrowT `appT` ((arrowT `appT` maybeT a) `appT` a)
+
 smtpdT :: TypeQ -> TypeQ
 smtpdT = appT (conT (mkName "Smtpd"))
 
-getN, getN_, setN, unsetN :: String -> Name
-getN   n = mkName $ "get"   ++ toUpper (head n) : tail n
-getN_  n = mkName $ "get"   ++ toUpper (head n) : tail n ++ "_"
-setN   n = mkName $ "set"   ++ toUpper (head n) : tail n
-unsetN n = mkName $ "unset" ++ toUpper (head n) : tail n
+defineVar :: ExpQ -> String -> TypeQ -> [Accessor a] -> Q [Dec]
+defineVar f n a accs = do
+  modVar <- sequence
+    [ sigD (mkName ("modify" ++ n)) (maybeAtoA a `appT` smtpdT a)
+    , funD (mkName ("modify" ++ n)) (mkBody [| \g -> $f (modifyVar (mkVar n) g) |])
+    , sigD (mkName ("set"    ++ n)) (arrowT `appT` a `appT` [t| Smtpd () |])
+    , funD (mkName ("set"    ++ n)) (mkBody [| $f . (setVar (mkVar n)) |])
+    , sigD (mkName ("unset"  ++ n)) [t| Smtpd () |]
+    , funD (mkName ("unset"  ++ n)) (mkBody [| $f (unsetVar (mkVar n)) |])
+    ]
+  accVar <- mapM mkAcc accs
+  return (modVar ++ concat accVar)
+    where
+    mkAcc (accName, accf) = sequence
+      [ sigD (mkName . accName $ n) (smtpdT a)
+      , funD (mkName . accName $ n) (mkBody (varE (mkName ("modify" ++ n)) `appE` accf))
+      ]
 
-getS, getS_, setS, unsetS :: TypeQ -> String -> DecQ
-getS   t n = sigD (getN   n) (smtpdT . maybeT $ t)
-getS_  t n = sigD (getN_  n) (smtpdT $ t)
-setS   t n = sigD (setN   n) ((arrowT `appT` t) `appT` [t| Smtpd () |])
-unsetS _ n = sigD (unsetN n) [t| Smtpd () |]
+type Accessor a = (String -> String, ExpQ)
 
-getB, getB_, setB, unsetB :: String -> DecQ
-getB   n = funD (getN   n) (mkBody [| local (getval  (mkVar n))  |])
-getB_  n = funD (getN_  n) (mkBody [| local (getval_ (mkVar n))  |])
-setB   n = funD (setN   n) (mkBody [| local . setval (mkVar n)   |])
-unsetB n = funD (unsetN n) (mkBody [| local (unsetval (mkVar n)) |])
+defineLocalVar :: String -> TypeQ -> [Accessor a] -> Q [Dec]
+defineLocalVar = defineVar [| local |]
 
-defineVar :: String -> TypeQ -> Q [Dec]
-defineVar n t = mapM (\f -> f n) [ getS   t, getB
-                                 , getS_  t, getB_
-                                 , setS   t, setB
-                                 , unsetS t, unsetB
-                                 ]
+defineGlobalVar :: String -> TypeQ -> [Accessor a] -> Q [Dec]
+defineGlobalVar = defineVar [| global |]

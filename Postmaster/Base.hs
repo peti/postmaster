@@ -18,12 +18,14 @@ import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
 import Control.Monad.Env
+import Control.Concurrent.MVar
 import System.IO.Driver
 import Data.Typeable
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 
 -- * The @Smtpd@ Monad
 
+type GlobalEnv  = MVar Env
 type SmtpdState = Env
 type Smtpd a    = RWST GlobalEnv [LogMsg] SmtpdState IO a
 
@@ -50,7 +52,11 @@ say a b c msg = return (reply a b c [msg])
 -- ** Environment
 
 global :: EnvT a -> Smtpd a
-global f = ask >>= liftIO . global' f
+global f = do
+  mv <- ask
+  liftIO . modifyMVar mv $ return . swap . runState f
+    where swap (a,e) = (e,a)
+
 
 local :: EnvT a -> Smtpd a
 local f = do
@@ -78,11 +84,11 @@ getUniqueID = global $ tick (mkVar "UniqueID")
 mySessionID :: Smtpd ID
 mySessionID = do
   let key = mkVar "SessionID"
-  sid' <- local $ getval key
+  sid' <- local $ getVar key
   case sid' of
     Just sid -> return sid
     _        -> do sid <- getUniqueID
-                   local (setval key sid)
+                   local (setVar key sid)
                    return sid
 
 -- ** Event Handler

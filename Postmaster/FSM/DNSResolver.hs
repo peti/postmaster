@@ -24,12 +24,12 @@ dnsResolver :: Variable
 dnsResolver = mkVar "dnsresolver"
 
 setDNSResolver :: Resolver -> EnvT ()
-setDNSResolver f = setval dnsResolver (DNSR f)
+setDNSResolver f = setVar dnsResolver (DNSR f)
 
 getDNSResolver :: Smtpd Resolver
 getDNSResolver = do
-  DNSR f <- local (getval dnsResolver)
-        >>= maybe (global $ getval_ dnsResolver) return
+  DNSR f <- local (getVar dnsResolver)
+        >>= maybe (global $ getVar_ dnsResolver) return
   return f
 
 queryA :: HostName -> Smtpd (Maybe [HostAddress])

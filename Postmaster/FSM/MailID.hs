@@ -26,12 +26,12 @@ handleMailID :: EventT
 handleMailID f e = do
   r <- f e
   case (e, isSuccess r) of
-    (SetMailFrom _, True) -> getUniqueID >>= \x -> mailID (`setval` x)
-    (ResetState   ,  _  ) -> mailID unsetval
+    (SetMailFrom _, True) -> getUniqueID >>= \x -> mailID (`setVar` x)
+    (ResetState   ,  _  ) -> mailID unsetVar
     (_, _)                -> return ()
   return r
 
 -- |Will 'fail' when @MailID@ is not set.
 
 getMailID :: Smtpd ID
-getMailID = mailID getval_
+getMailID = mailID getVar_

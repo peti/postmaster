@@ -22,10 +22,10 @@ dataHandler :: SmtpdVariable
 dataHandler = defineLocal "datahandler"
 
 setDataHandler :: DataHandler -> Smtpd ()
-setDataHandler f = dataHandler (`setval` DH f)
+setDataHandler f = dataHandler (`setVar` DH f)
 
 getDataHandler :: Smtpd DataHandler
-getDataHandler = dataHandler getval_ >>= \(DH f) -> return f
+getDataHandler = dataHandler getVar_ >>= \(DH f) -> return f
 
 feed :: DataHandler
 feed buf = getDataHandler >>= ($ buf)

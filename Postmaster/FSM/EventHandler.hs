@@ -26,12 +26,12 @@ eventHandler :: Variable
 eventHandler = mkVar "eventhandler"
 
 setEventHandler :: EventHandler -> EnvT ()
-setEventHandler = setval eventHandler . EH
+setEventHandler = setVar eventHandler . EH
 
 getEventHandler :: Smtpd EventHandler
 getEventHandler = do
-  EH f <- local (getval eventHandler)
-      >>= maybe (global $ getval_ eventHandler) return
+  EH f <- local (getVar eventHandler)
+      >>= maybe (global $ getVar_ eventHandler) return
   return f
 
 -- |Trigger the given event.

@@ -143,7 +143,7 @@ smtpdMain cap theEnv hIn hOut initST = do
   ((r, to, sid), st) <- runSmtpd greet theEnv initST
   st' <- case r of
     Reply (Code Success _ _) _  -> do
-      let getTO  = evalState (getDefault (mkVar "ReadTimeout") to)
+      let getTO  = evalState (getVarDef (mkVar "ReadTimeout") to)
           yellIO = syslogger . LogMsg sid st
           hMain  = smtpdHandler hOut theEnv
           errH e st' = yellIO (CaughtException e) >> return st'

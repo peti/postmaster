@@ -67,16 +67,16 @@ data WriteTimeout = WriteTimeout Timeout
                   deriving (Typeable, Show)
 
 setReadTimeout :: Timeout -> Smtpd ()
-setReadTimeout = local . setval (mkVar "ReadTimeout")
+setReadTimeout = local . setVar (mkVar "ReadTimeout")
 
 getReadTimeout :: Smtpd Timeout
-getReadTimeout = local $ getDefault (mkVar "ReadTimeout") (90 * 1000000)
+getReadTimeout = local $ getVarDef (mkVar "ReadTimeout") (90 * 1000000)
 
 setWriteTimeout :: Timeout -> Smtpd ()
-setWriteTimeout = local . setval (mkVar "WriteTimeout")
+setWriteTimeout = local . setVar (mkVar "WriteTimeout")
 
 getWriteTimeout :: Smtpd Timeout
-getWriteTimeout = local $ getDefault (mkVar "WriteTimeout") (90 * 1000000)
+getWriteTimeout = local $ getVarDef (mkVar "WriteTimeout") (90 * 1000000)
 
 safeWrite :: IO a -> Smtpd a
 safeWrite f = do
