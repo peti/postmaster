@@ -4,22 +4,28 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O0 -Wall -ihopenssl -imonadenv \
+HFLAGS	 := -threaded -O0 -Wall -ihopenssl \
 	    -isyslog -odir $(OBJDIR) -hidir $(OBJDIR) \
 	    '-\#include <openssl/evp.h>'
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
-HDI_PATH := http://haskell.org/ghc/docs/latest/html/libraries
+HDI_PATH := http://localhost/ghc-current/ghc-6.5/html/libraries
+MYLIB    := http://localhost/homepage/
 HDI_FILE := /usr/local/ghc-current/share/ghc-6.5/html/libraries
-HDIFILES := \
-  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock \
-  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock \
-  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock \
-  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
-  -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
+HDIFILES := 							\
+  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock 		\
+  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock 	\
+  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock 		\
+  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock 		\
+  -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock	\
+  -i $(MYLIB)/hsemail/docs,$(HDI_FILE)/hsemail/hsemail.haddock	\
+  -i $(MYLIB)/hsdns/docs,$(HDI_FILE)/hsdns/hsdns.haddock		\
+  -i $(MYLIB)/monadenv/docs,$(HDI_FILE)/monadenv/monadenv.haddock	\
+  -i $(MYLIB)/blockio/docs,$(HDI_FILE)/blockio/blockio.haddock	\
+  -i $(MYLIB)/child/docs,$(HDI_FILE)/child/child.haddock
 
-MONODIRS := hopenssl monadenv syslog
+MONODIRS := hopenssl syslog
 
 ##### build postmaster binary
 
@@ -43,7 +49,6 @@ SRCS := Postmaster.hs				\
 	Postmaster/IO.hs			\
 	Postmaster/Main.hs			\
 	hopenssl/Digest.hs			\
-	monadenv/MonadEnv.hs			\
 	syslog/Syslog.hs
 
 all::	postmaster

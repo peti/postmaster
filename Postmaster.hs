@@ -25,7 +25,7 @@ module Postmaster
   , module Network
   , module Network.DNS
   , module System.IO.Driver
-  , module MonadEnv
+  , module Control.Monad.Env
   , module Text.ParserCombinators.Parsec.Rfc2821
   , module Syslog
   )
@@ -35,7 +35,7 @@ import Network ( PortID(..) )
 import Control.Monad.RWS hiding ( local )
 import Network.DNS hiding ( Debug )
 import Data.Typeable
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 import Syslog
 import System.IO.Driver ( Capacity )

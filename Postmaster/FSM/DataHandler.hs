@@ -13,7 +13,7 @@ module Postmaster.FSM.DataHandler where
 
 import Data.Typeable
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 
 newtype DH = DH DataHandler
            deriving (Typeable)

@@ -34,7 +34,7 @@ import Postmaster.IO
 import Text.ParserCombinators.Parsec.Rfc2821
 import Syslog
 import System.IO.Driver
-import MonadEnv
+import Control.Monad.Env
 
 -- * Speaking ESMTP
 

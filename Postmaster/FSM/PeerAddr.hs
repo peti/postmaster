@@ -12,7 +12,7 @@ module Postmaster.FSM.PeerAddr where
 
 import Postmaster.Base
 import Network.Socket ( SockAddr )
-import MonadEnv
+import Control.Monad.Env
 
 peerAddr :: Variable
 peerAddr = mkVar "peeradr"

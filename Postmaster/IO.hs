@@ -24,7 +24,7 @@ import Postmaster.Base
 import Text.ParserCombinators.Parsec.Rfc2821
 import System.IO.Driver
 import Control.Timeout
-import MonadEnv
+import Control.Monad.Env
 
 -- * Socket Handlers
 
@@ -88,16 +88,3 @@ safeReply hOut r = safeWrite (hPutStr hOut (show r))
 
 safeFlush :: WriteHandle -> Smtpd ()
 safeFlush hOut = safeWrite (hFlush hOut)
-
--- |Like 'bracket', but only performs the final action if
--- there was an exception raised by the middle bit.
-
-bracketOnError
-	:: IO a		-- ^ computation to run first (\"acquire resource\")
-	-> (a -> IO b)  -- ^ computation to run last (\"release resource\")
-	-> (a -> IO c)	-- ^ computation to run in-between
-	-> IO c		-- returns the value from the in-between computation
-bracketOnError cons dest f =
-  block $ do
-    a <- cons
-    catch (unblock (f a)) (\e -> dest a >> throw e)

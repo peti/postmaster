@@ -15,7 +15,7 @@ import Control.Monad.RWS hiding ( local )
 import Network.DNS
 import Data.Typeable
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 
 newtype DNSR = DNSR Resolver
              deriving (Typeable)

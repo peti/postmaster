@@ -11,7 +11,7 @@
 module Postmaster.FSM.MailFrom where
 
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Local Variable: @MAILFROM :: 'Mailbox'@

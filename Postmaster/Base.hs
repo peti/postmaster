@@ -17,7 +17,7 @@ import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
-import MonadEnv
+import Control.Monad.Env
 import System.IO.Driver
 import Data.Typeable
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )

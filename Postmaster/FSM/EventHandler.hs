@@ -13,7 +13,7 @@ module Postmaster.FSM.EventHandler where
 
 import Data.Typeable
 import Postmaster.Base
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
 newtype EH = EH EventHandler

@@ -16,12 +16,11 @@ import Control.Monad.RWS hiding ( local )
 import System.Directory
 import System.IO
 import Postmaster.Base
-import Postmaster.IO
 import Postmaster.FSM.EventHandler
 import Postmaster.FSM.SessionState
 import Postmaster.FSM.DataHandler
 import Postmaster.FSM.MailID
-import MonadEnv
+import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 import System.IO.Driver
 import Digest
