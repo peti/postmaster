@@ -50,8 +50,6 @@ with this::
 > module Main where
 >
 > import System.IO
-> import System.Process
-> import System.Exit
 > import System.Time
 > import System.Posix.User
 > import Foreign.Marshal.Array ( withArray )
@@ -73,8 +71,7 @@ however, we add a mechanism to modify the configuration
 conveniently, so that we can run different versions::
 
 > main' :: (Config -> Config) -> IO ()
-> main' f =
->   mkConfig $ (flip smtpdMain) port . f
+> main' f = smtpdMain f port
 
 You have a working SMTP daemon now. Just start it as ``main'
 id`` and use a different shell to connect the server::
@@ -108,8 +105,10 @@ And by "writing additions" I mean writing our own version of
 and passes the others on to the standard version. In other
 words, we write transformers for the ``event`` function::
 
-> type EventT = (Event -> Smtpd SmtpReply)
->             -> Event -> Smtpd SmtpReply
+ Is in Postmaster.Event now.
+
+ > type EventT = (Event -> Smtpd SmtpReply)
+ >             -> Event -> Smtpd SmtpReply
 
 Our environment for writing these functions is the ``Smtpd``
 monad -- the heart of Postmaster. In it, we have full access
@@ -164,33 +163,35 @@ handler. For instance, with just a few lines of code we can
 implement the complete core functionality of [Sendmail]_.
 Look at this::
 
-> compatSendmail :: EventT
-> compatSendmail _ (Unrecognized "opensesame\r\n") = do
->   hin  <- asks hIn   :: Smtpd Handle
->   hout <- asks hOut  -- probably: hin == hout
->   rc <- liftIO $ do
->     -- give feedback
->     hPutStr hout "250 Please enter your wish.\r\n"
->     hFlush hout
->     -- read a line and strip trailing \r
->     cmd <- hGetLine hin
->     let cmd' = (reverse . drop 1 . reverse) cmd
->     -- handle it the way Sendmail would
->     (shIn,shOut,_,pid) <- runInteractiveCommand cmd'
->     hClose shIn
->     hGetContents shOut >>= hPutStr hout
->     -- wait for the process to terminate
->     Postmaster.safeWaitForProcess pid
->   case rc of
->     ExitSuccess   -> say 2 5 0 "Thank you for using Sendmail."
->     ExitFailure _ -> say 4 3 0 ("failed with: " ++ show rc)
->
-> compatSendmail f e = f e
+ Impossible now. The handles are no longer available.
+
+ > compatSendmail :: EventT
+ > compatSendmail _ (Unrecognized "opensesame\r\n") = do
+ >   hin  <- asks hIn   :: Smtpd Handle
+ >   hout <- asks hOut  -- probably: hin == hout
+ >   rc <- liftIO $ do
+ >     -- give feedback
+ >     hPutStr hout "250 Please enter your wish.\r\n"
+ >     hFlush hout
+ >     -- read a line and strip trailing \r
+ >     cmd <- hGetLine hin
+ >     let cmd' = (reverse . drop 1 . reverse) cmd
+ >     -- handle it the way Sendmail would
+ >     (shIn,shOut,_,pid) <- runInteractiveCommand cmd'
+ >     hClose shIn
+ >     hGetContents shOut >>= hPutStr hout
+ >     -- wait for the process to terminate
+ >     Postmaster.safeWaitForProcess pid
+ >   case rc of
+ >     ExitSuccess   -> say 2 5 0 "Thank you for using Sendmail."
+ >     ExitFailure _ -> say 4 3 0 ("failed with: " ++ show rc)
+ >
+ > compatSendmail f e = f e
 
 And now you have a Sendmail! ::
 
-> asSendmail :: IO ()
-> asSendmail = run compatSendmail
+ > asSendmail :: IO ()
+ > asSendmail = run compatSendmail
 
 Note that the extension integrates nicely with the rest of
 the daemon: the session continues to work normally after
@@ -221,8 +222,8 @@ we wrap the ``SayEhlo`` event::
 >     _                -> return (Reply rc msg)
 > announce f e = f e
 
-> openSendmail :: IO ()
-> openSendmail = run (announce . compatSendmail)
+ > openSendmail :: IO ()
+ > openSendmail = run (announce . compatSendmail)
 
 Now your daemon advertises what it is capable of when EHLO
 is issued::
@@ -238,13 +239,13 @@ weirdo comes into your office screaming about how your
 extension is a security risk, yadda-yadda-yadda. So what do
 we do? We add access control! ::
 
-> msEndmail :: EventT
-> msEndmail f e@(Unrecognized "opensesame\r\n") = do
->   sst <- gets sessionState
->   if sst < HaveHelo
->      then say 5 0 3 "Please say HELO first."
->      else compatSendmail f e
-> msEndmail f e = f e
+ > msEndmail :: EventT
+ > msEndmail f e@(Unrecognized "opensesame\r\n") = do
+ >   sst <- gets sessionState
+ >   if sst < HaveHelo
+ >      then say 5 0 3 "Please say HELO first."
+ >      else compatSendmail f e
+ > msEndmail f e = f e
 
 
 Configuring Mail Targets
@@ -318,7 +319,7 @@ entire SMTP dialogue::
 >     let buf = xs >>= (++"\r\n")
 >         n   = length buf
 >     withArray (mapEnum buf) $ \p ->
->       runStateT (smtpdHandler (eventT f cfg) (p,n)) initSmtpd
+>       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
 >     return ()
 >   where
 >   mapEnum = map (toEnum . fromEnum)
@@ -375,7 +376,7 @@ command-line arguments::
 > procmail :: [Mailbox] -> String -> String -> Smtpd SmtpReply
 > procmail _ [] _ = fail "procmail: need non-empty user name"
 > procmail mbox user arg = do
->   from <- gets mailFrom
+>   from <- getMailFrom
 >   uid <- liftIO getRealUserID
 >   let cmd  = concat $ intersperse " "
 >              [ "procmail"
@@ -629,8 +630,10 @@ combinator of choice then::
 primitives to construct more complex computations in the
 usual fashion::
 
-> (=?) :: (Typeable a, Show a) => String -> a -> EnvT a
-> key =? a = getval key >>= maybe (setval key a) return
+ TODO:
+
+ > (=?) :: (Typeable a, Show a) => String -> a -> EnvT a
+ > key =? a = getval key >>= maybe (setval key a) return
 
 Another useful combinator -- which is also exported by
 Postmaster -- is this generic counter::
@@ -795,7 +798,7 @@ causes Postmaster to drop the connection after the reply::
 
 > bye :: Smtpd SmtpReply
 > bye = do
->   whoami <- asks myHeloName
+>   whoami <- myHeloName
 >   say 4 2 1 (showString whoami " Hasta la vista, baby.")
 
 ::

@@ -7,15 +7,6 @@
    Maintainer  :  simons@cryp.to
    Stability   :  provisional
    Portability :  Haskell 2-pre
-
-   The Postmaster ESMTP Server. See
-   <http://postmaster.cryp.to/docs/tutorial.html> for an
-   introduction. Note that you should /not/ modify this
-   module. In theory, you should be able to achieve any
-   effect you like through modifying the contents of
-   'Config'. If there is something that appears to be
-   impossible to do without modifying the core modules,
-   please complain loudly to <mailto:postmaster-dev@lists.cryp.to>.
  -}
 
 module Postmaster.Base where
@@ -32,6 +23,7 @@ import Control.Monad.RWS hiding ( local )
 import qualified Data.Map as FM
 import Network.DNS
 import MonadEnv
+import Data.Typeable
 import Rfc2821 hiding ( path )
 import Child ( timeout, Timeout )
 
@@ -101,10 +93,6 @@ data Config = Config
         -- buffers for I\/O. Thus, it also determines the
         -- maximum line length Postmaster will accept. The
         -- default is 1024 bytes.
-  , myHeloName   :: String
-        -- ^ Initialized with 'getHostName' in 'mkConfig'.
-        -- Used by several event handlers; 'SayHelo', for
-        -- example.
   , globalEnv    :: MVar Env
         -- ^ A global environment for the entire daemon.
         -- Initialized to 'emptyFM' by 'withConfig'.
@@ -112,13 +100,6 @@ data Config = Config
         -- ^ Usually: @\/usr\/sbin\/sendmail@. Expect this
         -- entry to be renamed or to change completely in
         -- the future.
-  , hIn, hOut    :: Handle
-        -- ^ Set by 'smtpdMain'. Stay away from them. Using
-        -- the I\/O stream directly will /always/ break
-        -- things because of \"pipelining\".
-  , sessionID    :: ID
-        -- ^ Set by 'smtpdMain'. Uniquely identifies a TCP
-        -- session.
   , peerAddr     :: Maybe SockAddr  -- ^ set by 'smtpdMain'
   }
   deriving (Show)
@@ -144,23 +125,6 @@ data SmtpdState = SmtpdState
         -- ^ Like 'readTimeout', but for outbound I\/O.
         -- Timeouts are specified in microseconds (@1\/10^6@
         -- seconds).
-  , peerHelo     :: String
-        -- ^ Set in 'SayHelo' event. The 'SayHeloAgain',
-        -- 'SayEhlo', and 'SayEhloAgain' events are just
-        -- wrappers for 'SayHelo' which modify the output
-        -- message, so you can safely ignore them.
-  , isEhloPeer   :: Bool
-        -- ^ Set to 'True' by 'SayEhlo', to 'False' by
-        -- 'SayHelo'.
-  , mailID       :: ID
-        -- ^ Set to a unique value every time 'SetMailFrom'
-        -- is triggered.
-  , mailFrom     :: Mailbox
-        -- ^ Set by 'SetMailFrom'.
-  , rcptTo       :: [Target]
-        -- ^ Postmaster doesn't set this field at all; this
-        -- is your problem. You can probably guess which
-        -- event is supposed to do this.
   , localEnv     :: Env
         -- ^ Transient environment for the TCP-session. May
         -- be initialized to your needs in the 'Greeting'
@@ -191,18 +155,13 @@ initSmtpd = SmtpdState
   , ioBufferGap  = 0
   , readTimeout  = 90*1000000
   , writeTimeout = 90*1000000
-  , peerHelo     = ""
-  , isEhloPeer   = False
-  , mailFrom     = nullPath
-  , mailID       = 0
-  , rcptTo       = []
   , localEnv     = FM.empty
   }
 
 -- ** Mail Targets
 
 data Target = Target [Mailbox] MailHandler MailerStatus
-            deriving (Show)
+            deriving (Show, Typeable)
 
 data MailHandler
   = Pipe FilePath [String]
@@ -229,9 +188,9 @@ type ExternHandle = MVar (Handle, Handle, Handle, ProcessHandle)
 
 pipe :: [Mailbox] -> FilePath -> [String] -> Smtpd SmtpReply
 pipe _   []   _   = fail "Postmaster.pipe: path may not be empty"
-pipe rs path args = do
-  let target = Target rs (Pipe path args) Ready
-  modify (\st -> st { rcptTo = target : (rcptTo st) })
+pipe {- rs path args -} _ _ _ = do
+--    let target = Target rs (Pipe path args) Ready
+-- TODO:  modify (\st -> st { rcptTo = target : (rcptTo st) })
   say 2 5 0 "recipient ok"
 
 -- |Wrapper for 'pipe' which runs the command with
@@ -254,9 +213,9 @@ shell mbox cmd = pipe mbox "/bin/sh" [ "-c", cmd']
 -- with appropriate flags.
 
 relay :: [Mailbox] -> Smtpd SmtpReply
-relay rs = do
-  let target = Target rs Relay Ready
-  modify (\st -> st { rcptTo = target : (rcptTo st) })
+relay {- rs -} _ = do
+--    let target = Target rs Relay Ready
+-- TODO:  modify (\st -> st { rcptTo = target : (rcptTo st) })
   say 2 5 0 "recipient ok"
 
 -- |Run an external process and store its handle in an
@@ -294,65 +253,6 @@ safeWaitForProcess pid =
     wait    = threadDelay 1000000 -- 1 second
     maxwait = 30000000            -- 30 seconds
     badluck = fail "timeout while waiting for external process"
-
--- |Make a 'Ready' target 'Live'.
-
-startTarget :: Target -> Smtpd Target
-
-startTarget (Target rs mh@(Pipe path args) Ready) = do
-  yell (StartExternal rs (path:args))
-  mv <- liftIO (extern path args)
-  return (Target rs mh (Live mv))
-
-startTarget (Target rs Relay Ready) = do
-  from <- gets mailFrom
-  mta <- asks sendmailPath
-  let flags = [ "-f" ++ show from ] ++ map show rs
-      t'    = Target rs (Pipe mta flags) Ready
-  Target _ _ mst <- startTarget t'
-  return (Target rs Relay mst)
-
-startTarget t = yell (UnknownStartTarget t) >> return t
-
--- |Give a target a chunk of data.
-
-feedTarget :: (Ptr Word8, Int) -> Target -> Smtpd Target
-feedTarget (ptr,n) t@(Target _ _ (Live mv)) = do
-  liftIO (withMVar mv (\(hin,_,_,_) -> hPutBuf hin ptr n))
-  return t
-
-feedTarget _ t = yell (UnknownFeedTarget t) >> return t
-
--- |Close a target.
-
-closeTarget :: Target -> Smtpd Target
-closeTarget t@(Target _ _ (Live mv)) = do
-  liftIO (withMVar mv (\(hin,_,_,_) -> hClose hin))
-  return t
-
-closeTarget t = return t
-
--- |Update a targets 'MailerStatus' to signify success or
--- failure.
-
-commitTarget :: Target -> Smtpd Target
-commitTarget t@(Target rs mh (Live mv)) = do
-  rc <- liftIO $ do
-    (hin,hout,herr,pid) <- takeMVar mv
-    catch (hClose hin) (const (return ()))
-    safeWaitForProcess pid
-      `finally` hClose hout
-      `finally` hClose herr
-  yell (ExternalResult t rc)
-  if rc == ExitSuccess
-     then return (Target rs mh Succeeded)
-     else if    (rc == ExitFailure 65)   -- EX_DATAERR
-             || (rc == ExitFailure 67)   -- EX_NOUSER
-             || (rc == ExitFailure 68)   -- EX_NOHOST
-             then return (Target rs mh FailedPermanently)
-             else return (Target rs mh Failed)
-
-commitTarget t = yell (UnknownCommitTarget t) >> return t
 
 -- ** Generic Environment
 
@@ -410,20 +310,13 @@ data LogEvent
 
 -- |Given a log event, construct a 'LogMsg' and write it to
 -- the monad's log stream with 'tell'. Every log event
--- contains the current 'SmtpdState' and the 'sessionID'.
+-- contains the current 'SmtpdState' and the \"SessionID\".
 
 yell :: LogEvent -> Smtpd ()
 yell e = do
-  sid <- asks sessionID
+  sid <- local $ fmap (maybe 0 id) (getval "SessionID")
   st <- get
   tell [LogMsg sid st e]
-
--- * Standard Event and Data Handler
-
-feed :: (Ptr Word8, Int) -> Smtpd ()
-feed (ptr,n) = do
-  ts <- gets rcptTo >>= mapM (feedTarget (ptr,n))
-  modify (\st -> st { rcptTo = ts })
 
 -- * Helpers
 

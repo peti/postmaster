@@ -14,7 +14,6 @@
 module Postmaster.Main where
 
 import Prelude hiding ( catch )
-import Data.Unique
 import Control.Exception
 import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
@@ -23,7 +22,6 @@ import System.IO.Error hiding ( catch )
 import System.Posix.Signals
 import Network ( listenOn, PortID(..) )
 import Network.Socket hiding ( shutdown )
-import Network.BSD ( getHostName )
 import Network.DNS
 import Foreign
 import Postmaster.Base
@@ -59,33 +57,30 @@ withConfig cfg f = do
 -- store it in 'sessionID'. At last, fork off 'runSmtpd' to
 -- handle the connection and go back to listening.
 
-smtpdMain :: Config -> PortID -> IO ()
-smtpdMain cfg port = do
+smtpdMain :: (Config -> Config) -> PortID -> IO ()
+smtpdMain f port = do
   installHandler sigPIPE Ignore Nothing
   withSocketsDo $
     withSyslog "postmaster" [PID, PERROR] MAIL $ do
-      bracket (listenOn port) (sClose) $ \s -> do
-        setSocketOption s ReuseAddr 1
-        loop s
+      mkConfig $ \cfg ->
+        bracket (listenOn port) (sClose) $ \s -> do
+          setSocketOption s ReuseAddr 1
+          loop (f cfg) s
   where
-  loop ls = do
+  loop cfg ls = do
     (s,sa) <- accept ls
-    spawn (main (s,sa) `finally` sClose s)
-    loop ls
-  main (s,sa) = do
+    spawn (main cfg (s,sa) `finally` sClose s)
+    loop cfg ls
+  main cfg (s,sa) = do
     setSocketOption s KeepAlive 1
     h <- socketToHandle s ReadWriteMode
     let size = Just (ioBufferSize cfg)
     hSetBuffering h (BlockBuffering size)
-    sid <- fmap hashUnique newUnique
-    let cfg' = cfg { hIn = h, hOut = h
-                   , peerAddr  = Just sa
-                   , sessionID = sid
-                   }
+    let cfg' = cfg { peerAddr  = Just sa }
     bracket_
       (yellIO cfg' initSmtpd (AcceptConn sa))
       (yellIO cfg' initSmtpd (DropConn sa) >> hClose h)
-      (runSmtpd cfg')
+      (runSmtpd h h cfg')
 
 -- |Run a SMTP server with the given configuration. The
 -- function will log 'StartSession', then trigger
@@ -98,23 +93,21 @@ smtpdMain cfg port = do
 -- 'smtpdMain', which is by-passed, doesn't do it for you in
 -- this case.
 
-runSmtpd :: Config -> IO ()
-runSmtpd cfg = do
-  yellIO cfg initSmtpd (StartSession cfg)
+runSmtpd :: Handle -> Handle -> Config -> IO ()
+runSmtpd hIn hOut cfg = do
   (r, st) <- runStateT (withConfig cfg (trigger eventHandler Greeting)) initSmtpd
+  yellIO cfg initSmtpd (StartSession cfg)
   let logM = yellIO cfg st
       to   = writeTimeout st
-      hout = hOut cfg
-      safeIO f = timeout to f >>= maybe (fail "write timeout") return
+  let safeIO f = timeout to f >>= maybe (fail "write timeout") return
   logM (Output (show r))
-  safeIO (hPutStr hout (show r) >> hFlush hout)
+  safeIO (hPutStr hOut (show r) >> hFlush hOut)
   let Reply (Code rc _ _) _ = r
   if rc /= Success then return () else do
-    let hin  = hIn cfg
-        size = ioBufferSize cfg
-        main = smtpdHandler cfg
+    let size = ioBufferSize cfg
+        main = smtpdHandler hOut cfg
     catch
-      (runLoopNB readTimeout hin size main st >> return ())
+      (runLoopNB readTimeout hIn size main st >> return ())
       (\e -> case e of
          IOException ie ->
            if isTimeout ie then logM ReadTimeout else
@@ -135,14 +128,13 @@ runSmtpd cfg = do
 -- 'eventHandler' (or the 'dataHandler') returns 221 or 421,
 -- drop the connection after writing the reply.
 
-smtpdHandler :: Config -> LoopHandler SmtpdState
-smtpdHandler cfg (ptr,n) = do
+smtpdHandler :: Handle -> Config -> LoopHandler SmtpdState
+smtpdHandler hOut cfg (ptr,n) = do
   let logM m   = get >>= \st -> yellIO cfg st m
       safeIO f = gets writeTimeout >>= \to ->
                  liftIO (timeout to f) >>=
                  maybe (fail "write timeout") return
-      hout     = hOut cfg
-      shutdown = safeIO (hFlush hout >> fail "shutdown")
+      shutdown = safeIO (hFlush hOut >> fail "shutdown")
   sst <- gets sessionState
   r' <- if sst == HaveData
            then withConfig cfg (handleData (ptr,n))
@@ -150,7 +142,7 @@ smtpdHandler cfg (ptr,n) = do
   case r' of
     Just (r,i) -> do
       logM (Output (show r))
-      safeIO (hPutStr hout (show r))
+      safeIO (hPutStr hOut (show r))
       let term (Reply (Code Success Connection 1) _)          = True
           term (Reply (Code TransientFailure Connection 1) _) = True
           term _                                              = False
@@ -158,12 +150,12 @@ smtpdHandler cfg (ptr,n) = do
       modify (\st -> st { ioBufferGap = (ioBufferGap st) + i })
       let ptr' = ptr `plusPtr` i
           n'   = assert (i <= n) (n - i)
-      smtpdHandler cfg (ptr',n')
+      smtpdHandler hOut cfg (ptr',n')
     Nothing    -> do
       gap <- gets ioBufferGap
       if gap == 0
          then return Nothing
-         else do safeIO (hFlush hout)
+         else do safeIO (hFlush hOut)
                  modify (\st -> st { ioBufferGap = 0 })
                  return (Just ((), gap))
 
@@ -217,15 +209,14 @@ handleDialog (ptr,n) = do
 -- writes directly to 'logStream'.
 
 yellIO :: (MonadIO m) => Config -> SmtpdState -> LogEvent -> m ()
-yellIO cfg st e = do
-  liftIO ((logStream (callbacks cfg)) (LogMsg (sessionID cfg) st e))
+yellIO cfg st e = do                    -- TODO
+  liftIO ((logStream (callbacks cfg)) (LogMsg 0 st e))
 
 
 mkConfig :: (Config -> IO a) -> IO a
 mkConfig f =
   initResolver [NoErrPrint,NoServerWarn] $ \resolver -> do
   theEnv <- newMVar emptyEnv
-  whoami <- getHostName
   let cbs = CB { eventHandler = event
                , dataHandler  = feed
                , logStream    = syslogger
@@ -233,12 +224,8 @@ mkConfig f =
                }
       cfg = Config
               { callbacks    = cbs
-              , hIn          = stdin
-              , hOut         = stdout
               , ioBufferSize = 1024
               , peerAddr     = Nothing
-              , myHeloName   = whoami
-              , sessionID    = 0
               , globalEnv    = theEnv
               , sendmailPath = "/usr/sbin/sendmail"
               }
