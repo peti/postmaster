@@ -1,4 +1,3 @@
-{-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Main
    Copyright   :  (c) 2005-02-06 by Peter Simons
@@ -16,7 +15,6 @@ module Postmaster.Main where
 
 import Prelude hiding ( catch )
 import Data.Maybe
-import Data.Typeable
 import Control.Exception
 import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
@@ -103,7 +101,7 @@ smtpdServer :: Capacity -> GlobalEnv -> SocketHandler
 smtpdServer cap theEnv =
   handleLazy ReadWriteMode $ \(h, Just sa) -> do
     hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
-    let st = execState (setval "PeerAddr" (PeerAddr sa)) emptyEnv
+    let st = execState (setval "PeerAddr" sa) emptyEnv
     smtpdMain cap theEnv h h st
 
 smtpdMain :: Capacity
@@ -203,10 +201,5 @@ syslogger (LogMsg sid _ e) = syslog Info $
 
 -- * Local Variable: @PeerAddr@
 
-data PeerAddr = PeerAddr SockAddr
-              deriving (Typeable, Show)
-
 getPeerAddr :: Smtpd (Maybe SockAddr)
-getPeerAddr =
-  local (getval "PeerAddr") >>=
-    return . maybe Nothing (\(PeerAddr a) -> Just a)
+getPeerAddr = local (getval "PeerAddr")
