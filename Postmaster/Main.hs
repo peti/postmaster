@@ -15,7 +15,6 @@ module Postmaster.Main where
 
 import Prelude hiding ( catch )
 import Data.Maybe
-import Control.Exception
 import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
 import System.IO
@@ -57,6 +56,7 @@ smtpdHandler hOut theEnv buf = runSmtpd (smtpd buf >>= handler) theEnv
 -- <http://www.faqs.org/rfcs/rfc2920.html> section 3.1.
 
 smtpd :: Buffer -> Smtpd ([SmtpReply], Buffer)
+smtpd buf@(Buf _  _  0) = return ([], buf)
 smtpd buf@(Buf _ ptr n) = do
   sst <- getSessionState
   if (sst == HaveData)
@@ -94,7 +94,7 @@ handleDialog line = do
 
 runSmtpd' :: Logger -> Smtpd a -> GlobalEnv -> SmtpdState
           -> IO (a, SmtpdState)
-runSmtpd' logger f = runStateT . withLogger logger (safe f)
+runSmtpd' logger f = runStateT . withLogger logger f
 
 -- |Convenience wrapper for 'runSmtpd'' with 'Logger'
 -- hard-coded to 'syslogger'.
@@ -119,24 +119,6 @@ withGlobalEnv myHelo dns eventT f = do
   newMVar (execState initEnv emptyEnv) >>= f
 
 
--- |'Shutdown' on a thrown exception. Internal function.
-
-safe :: Smtpd a -> Smtpd a
-safe f = do
-  cfg <- ask
-  st <- get
-  (r, st', w) <- liftIO (f' cfg st)
-  tell w
-  put st'
-  return r
-    where
-    f' cfg st = catch (runRWST f cfg st)
-                  (\e -> runRWST (goDown e) cfg st)
-    goDown e  = do sst <- getSessionState
-                   when (sst /= HaveQuit)
-                     (myEventHandler >>= ($ Shutdown) >> return ())
-                   return (throw e)
-
 -- * ESMTP Network Daemon
 
 smtpdServer :: Capacity -> GlobalEnv -> SocketHandler
@@ -144,14 +126,14 @@ smtpdServer cap theEnv =
   handleLazy ReadWriteMode $ \(h, Just sa) -> do
     hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
     let st = execState (setval (mkVar "PeerAddr") sa) emptyEnv
-    smtpdMain cap theEnv h h st
+    smtpdMain cap theEnv h h st >> return ()
 
 smtpdMain :: Capacity
           -> GlobalEnv
           -> ReadHandle
           -> WriteHandle
           -> SmtpdState
-          -> IO ()
+          -> IO SmtpdState
 smtpdMain cap theEnv hIn hOut initST = do
   let greet = do r <- trigger Greeting
                  safeReply hOut r >> safeFlush hOut
@@ -159,17 +141,18 @@ smtpdMain cap theEnv hIn hOut initST = do
                  sid <- mySessionID
                  return (r, to, sid)
   ((r, to, sid), st) <- runSmtpd greet theEnv initST
-  let Reply (Code rc _ _) _ = r
-  when (rc == Success) $ do
-    let getTO  = evalState (getDefault (mkVar "ReadTimeout") to)
-        yellIO = syslogger . LogMsg sid st
-        hMain  = smtpdHandler hOut theEnv
-    catch
-      (runLoopNB getTO hIn cap hMain st >> return ())
-      (\e -> case e of
-         IOException ie -> yellIO (CaughtIOError ie)
-         _              -> yellIO (CaughtException e))
-
+  st' <- case r of
+    Reply (Code Success _ _) _  -> do
+      let getTO  = evalState (getDefault (mkVar "ReadTimeout") to)
+          yellIO = syslogger . LogMsg sid st
+          hMain  = smtpdHandler hOut theEnv
+          errH e st' = yellIO (CaughtException e) >> return st'
+      runLoopNB getTO errH hIn cap hMain st
+    _ -> return st
+  let bye = do sst <- getSessionState
+               when (sst /= HaveQuit)
+                 (trigger Shutdown >> return ())
+  fmap snd (runSmtpd bye theEnv st')
 
 main' :: Capacity -> PortID -> EventT -> IO ()
 main' cap port eventT = do
