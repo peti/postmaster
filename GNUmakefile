@@ -128,9 +128,3 @@ init-src::	$(MONODIRS)
 
 $(MONODIRS):
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.$@ co $@
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.child co child
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.dns co dns
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.email co email
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.hopenssl co hopenssl
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.monadenv co monadenv
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.syslog co syslog
