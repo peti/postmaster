@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster
-   Copyright   :  (c) 2004-11-01 by Peter Simons
+   Copyright   :  (c) 2005-02-03 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to

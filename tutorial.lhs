@@ -4,7 +4,7 @@ A Walk Through "Config.hs"
 ==========================
 
 :Author: Peter Simons <simons@cryp.to>
-:Date:   2004-11-01
+:Date:   2005-02-03
 :Note:   This text is *nowhere* near being complete.
 
 .. contents::
