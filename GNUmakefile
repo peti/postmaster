@@ -111,9 +111,9 @@ redate::
 init-src::
 	@rm -f MT/monotonerc
 	@ln -s ../.monotonerc MT/monotonerc
-	monotone --branch=to.cryp.hs.dns co dns
-	monotone --branch=to.cryp.hs.email co email
-	monotone --branch=to.cryp.hs.blockio co blockio
-	monotone --branch=to.cryp.hs.child co child
-	monotone --branch=to.cryp.hs.syslog co syslog
-	monotone --branch=to.cryp.hs.hopenssl co hopenssl
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.dns co dns
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.email co email
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.blockio co blockio
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.child co child
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.syslog co syslog
+	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.hopenssl co hopenssl
