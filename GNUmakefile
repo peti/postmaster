@@ -7,7 +7,7 @@ OBJDIR	 := .objs
 HFLAGS	 := -threaded -O -Wall \
             -idns -iemail -iblockio -ichild -ihopenssl \
 	    -imonadenv -isyslog '-\#include <adns.h>' \
-	    '-\#include <sys/poll.h>' \
+	    '-\#include <sys/poll.h>' '-\#include <openssl/evp.h>' \
 	    -odir $(OBJDIR) -hidir $(OBJDIR)
 DOCDIR	 := docs
 HADDOCK	 := haddock
