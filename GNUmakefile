@@ -29,6 +29,7 @@ MONODIRS := blockio child dns email hopenssl monadenv syslog
 
 SRCS := Postmaster.hs				\
 	Postmaster/Base.hs			\
+	Postmaster/Main.hs			\
 	blockio/BlockIO.hs			\
 	child/Child.hs				\
 	dns/Data/Endian.hs			\
@@ -123,7 +124,7 @@ distclean::	clean
 redate::
 	redate Postmaster.hs tutorial.lhs README
 
-init-src::	$(MONODIRS)
+init-src::	$(MONODIRS) $(SRCS)
 	@rm -f MT/monotonerc
 	@ln -s ../.monotonerc MT/monotonerc
 

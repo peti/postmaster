@@ -20,6 +20,7 @@
 
 module Postmaster
   ( module Postmaster.Base
+  , module Postmaster.Main
   , module Rfc2821
   , module Network.DNS
   , module MonadEnv
@@ -50,6 +51,7 @@ import Rfc2821 hiding ( path )
 -- import Child ( timeout, Timeout )
 import Syslog
 import Postmaster.Base
+import Postmaster.Main
 
 
 -- ----- Configure Emacs -----
