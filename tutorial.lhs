@@ -75,7 +75,7 @@ sensible defaults, and for our tests we'll run the daemon on
 Port 2525::
 
 > port :: PortID
-> port = PortNumber 25
+> port = PortNumber 2525
 
 For the benefit of the interactive nature of this tutorial,
 however, we add a mechanism to modify the configuration

@@ -23,7 +23,8 @@ module Postmaster where
 import Prelude hiding ( catch )
 import Foreign
 import System.Posix.Signals
-import System.IO hiding ( catch, try )
+import System.IO
+import System.IO.Error hiding ( catch, try )
 import Network ( listenOn, PortID(..) )
 import Network.BSD ( getHostName )
 import Network.Socket hiding ( listen, shutdown )
@@ -803,10 +804,12 @@ strstr tok = find 0
     | tok `isPrefixOf` ls = Just (pos + length tok)
     | otherwise           = find (pos + 1) xs
 
-instance Show SockAddr where
-  show (SockAddrUnix str)     = str
-  show (SockAddrInet port ha) =
-    shows (RRAddr ha) . (':':) $ show port
+-- TODO: GHC 6.3 provides this already!
+--
+-- instance Show SockAddr where
+--   show (SockAddrUnix str)     = str
+--   show (SockAddrInet port ha) =
+--     shows (RRAddr ha) . (':':) $ show port
 
 instance Show Callbacks where
   show _ = "<Postmaster.Callbacks>"
