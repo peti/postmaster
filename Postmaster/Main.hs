@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Main
-   Copyright   :  (c) 2005-02-05 by Peter Simons
+   Copyright   :  (c) 2005-02-06 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -150,19 +150,24 @@ smtpdHandler hOut theEnv buf = runSmtpd (smtpd hOut buf) theEnv
 
 smtpdMain :: Capacity -> ReadHandle -> WriteHandle -> GlobalEnv -> IO ()
 smtpdMain cap hIn hOut theEnv = do
-  let greet = trigger Greeting >>= \r -> safeReply hOut r >> return r
-  (r, st) <- runSmtpd greet theEnv emptyEnv
+  let greet = do r <- trigger Greeting
+                 safeReply hOut r >> safeFlush hOut
+                 to <- getReadTimeout
+                 sid <- mySessionID
+                 return (r, to, sid)
+  ((r, to, sid), st) <- runSmtpd greet theEnv emptyEnv
   let Reply (Code rc _ _) _ = r
-  undefined
   when (rc == Success) $ do
+    let getTO  = evalState (getDefault "ReadTimeout" to)
+        yellIO = syslogger . LogMsg sid st
     catch
-      (runLoop hIn cap (smtpdHandler hOut theEnv) st >> return ())
+      (runLoopNB getTO hIn cap (smtpdHandler hOut theEnv) st >> return ())
       (\e -> case e of
-         IOException _ -> return ()
-         _             -> return ())
+         IOException ie -> yellIO (CaughtIOError ie)
+         _              -> yellIO (CaughtException e))
 
-main' :: Capacity -> EventT -> PortID -> IO ()
-main' cap eventT port = do
+main' :: Capacity -> PortID -> EventT -> IO ()
+main' cap port eventT = do
   installHandler sigPIPE Ignore Nothing
   installHandler sigCHLD (Catch (return ())) Nothing
   whoami <- getHostName
@@ -185,33 +190,4 @@ main' cap eventT port = do
     smtpdMain cap h h theEnv `finally` hClose h
 
 main :: IO ()
-main = main' 1024 id (PortNumber 2525)
-
--- -- mkConfig :: (Config -> IO a) -> IO a
--- -- mkConfig f =
--- --   initResolver [NoErrPrint,NoServerWarn] $ \resolver -> do
--- --   theEnv <- newMVar emptyEnv
--- --   let cbs = CB { eventHandler = mkEvent "peti.cryp.to"
--- --                , dataHandler  = feed
--- --                , logStream    = syslogger
--- --                , queryDNS     = resolver
--- --                }
--- --       cfg = Config
--- --               { callbacks    = cbs
--- --               , peerAddr     = Nothing
--- --               , globalEnv    = theEnv
--- --               , sendmailPath = "/usr/sbin/sendmail"
--- --               }
--- --   f cfg
-
--- |Currently logs all messages with 'syslog' and priority
--- 'Info'. Will be polished when I have nothing better to
--- do.
-
-
-
--- ----- Configure Emacs -----
---
--- Local Variables: ***
--- haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
--- End: ***
+main = main' 1024 (PortNumber 2525) id

@@ -4,7 +4,7 @@ A Walk Through "Config.hs"
 ==========================
 
 :Author: Peter Simons <simons@cryp.to>
-:Date:   2005-02-05
+:Date:   2005-02-06
 :Note:   This text is *nowhere* near being complete.
 
 .. contents::
@@ -32,49 +32,27 @@ care how to configure a real bad-ass MTA. So I'll do just
 that and refer you to the `reference documentation`_ for
 the details.
 
-Alright, what are our design objectives for the MTA?
-
- 1) It MUST be bad-ass.
-
- 2) It MUST be impolite to the peer.
-
- 3) It MUST refuse any e-mail it possibly can without
-    really *obviously* violating the RFCs.
-
- 4) It SHOULD deliver everything else to your mailbox.
-
-Fortunately, Postmaster provides (1) and (2) out-of-the-box,
-so we can focus on the latter two points. And we'll begin
-with this::
-
 > module Main where
 >
 > import System.IO
-> import System.Time
+> -- import System.Time
 > import System.Posix.User
-> import Foreign.Marshal.Array ( withArray )
+> -- import Foreign.Marshal.Array ( withArray )
 > import Data.Char
 > import Data.List
-> import Postmaster
+> import Postmaster hiding ( main )
 
-The Postmaster daemon needs two things before it can run: A
-configuration_ and a port number. [1]_ The function
-``mkConfig :: IO Config`` creates a configuration with
-sensible defaults, and for our tests we'll run the daemon on
-Port 2525::
+> ioBufferSize :: Capacity
+> ioBufferSize = 1024
 
 > port :: PortID
 > port = PortNumber 2525
 
-For the benefit of the interactive nature of this tutorial,
-however, we add a mechanism to modify the configuration
-conveniently, so that we can run different versions::
+> run :: EventT -> IO ()
+> run f = main' 1024 port f
 
-> main' :: (Config -> Config) -> IO ()
-> main' f = smtpdMain f port
-
-You have a working SMTP daemon now. Just start it as ``main'
-id`` and use a different shell to connect the server::
+You have a working SMTP daemon now. Just start it with ``run
+id`` and ``telnet`` to the server::
 
   $ telnet localhost 2525
   Trying 127.0.0.1...
@@ -94,35 +72,6 @@ The default configuration will ...
 - refuse every RCPT command;
 - thus, refuse DATA commands for lack of recipients.
 
-We can change this configuration through writing additions
-to Postmaster's default event handler, the function::
-
-  event :: Event -> Smtpd SmtpReply
-  type Smtpd a = RWST Config [LogMsg] SmtpdState IO a
-
-And by "writing additions" I mean writing our own version of
-``event`` which handles those events_ we are interested in
-and passes the others on to the standard version. In other
-words, we write transformers for the ``event`` function::
-
- Is in Postmaster.Event now.
-
- > type EventT = (Event -> Smtpd SmtpReply)
- >             -> Event -> Smtpd SmtpReply
-
-Our environment for writing these functions is the ``Smtpd``
-monad -- the heart of Postmaster. In it, we have full access
-to the session's state, to the configuration, and we can log
-messages through the standard function ``tell :: [LogMsg] ->
-Smtpd ()`` provided by ``MonadWriter``. To guarantee a
-certain consistency in the log messages, Postmaster provides
-the wrapper ``yell :: LogEvent -> Smtpd ()``. You will
-usually only need the log event ``Msg String``, which allows
-you to log free-style. [2]_
-
-This bit of knowledge already allows us to write a rather
-useful combinator::
-
 > debugEH :: String -> EventT
 > debugEH name f e = do
 >   yell (StartEventHandler name e)
@@ -137,16 +86,6 @@ handler with this combinator, we can trace its input and
 output values. With two little helper functions, we can try
 it out right away::
 
-> eventT :: EventT -> (Config -> Config)
-> eventT f cfg = cfg'
->   where
->   cb   = callbacks cfg
->   cb'  = cb { eventHandler = f (eventHandler cb) }
->   cfg' = cfg { callbacks = cb' }
->
-> run :: EventT -> IO ()
-> run f = main' (eventT f)
->
 > mainDebug :: IO ()
 > mainDebug = run (debugEH "default")
 
@@ -156,96 +95,6 @@ the system log file you've configured for ``syslog(3)``)::
 
   SID 1: StartEventHandler "default" Greeting
   SID 1: EventHandlerResult "default" Greeting 220
-
-Of course, ``Smtpd`` happens to be the ``IO`` monad. So you
-have carte blanche to do whatever you please in an event
-handler. For instance, with just a few lines of code we can
-implement the complete core functionality of [Sendmail]_.
-Look at this::
-
- Impossible now. The handles are no longer available.
-
- > compatSendmail :: EventT
- > compatSendmail _ (Unrecognized "opensesame\r\n") = do
- >   hin  <- asks hIn   :: Smtpd Handle
- >   hout <- asks hOut  -- probably: hin == hout
- >   rc <- liftIO $ do
- >     -- give feedback
- >     hPutStr hout "250 Please enter your wish.\r\n"
- >     hFlush hout
- >     -- read a line and strip trailing \r
- >     cmd <- hGetLine hin
- >     let cmd' = (reverse . drop 1 . reverse) cmd
- >     -- handle it the way Sendmail would
- >     (shIn,shOut,_,pid) <- runInteractiveCommand cmd'
- >     hClose shIn
- >     hGetContents shOut >>= hPutStr hout
- >     -- wait for the process to terminate
- >     Postmaster.safeWaitForProcess pid
- >   case rc of
- >     ExitSuccess   -> say 2 5 0 "Thank you for using Sendmail."
- >     ExitFailure _ -> say 4 3 0 ("failed with: " ++ show rc)
- >
- > compatSendmail f e = f e
-
-And now you have a Sendmail! ::
-
- > asSendmail :: IO ()
- > asSendmail = run compatSendmail
-
-Note that the extension integrates nicely with the rest of
-the daemon: the session continues to work normally after
-``compatSendmail`` returns. Sendmail usually can't return
-cleanly when this functionality is used. Here is an example
-session::
-
-  220 peti.cryp.to Postmaster ESMTP Server
-  opensesame
-  250 Please enter your wish.
-  ls -l /etc/passwd
-  -rw-r--r--  1 root root 3302 Jul 12 22:17 /etc/passwd
-  250 Thank you for using Sendmail.
-  QUIT
-  221 peti.cryp.to closing connection
-
-But what is a cool extension like this worth if the world
-doesn't *know* about it? Now that we can do this, we'd like
-to list some fancy keyword in the response to EHLO, too. So
-we wrap the ``SayEhlo`` event::
-
-> announce :: EventT
-> announce f e@(SayEhlo _) = do
->   Reply rc msg <- f e
->   let msg' = msg ++ ["OPENSESAME"]
->   case rc of
->     Code Success _ _ -> return (Reply rc msg')
->     _                -> return (Reply rc msg)
-> announce f e = f e
-
- > openSendmail :: IO ()
- > openSendmail = run (announce . compatSendmail)
-
-Now your daemon advertises what it is capable of when EHLO
-is issued::
-
-  ehlo brother
-  250-peti.cryp.to Postmaster; pleased to meet you.
-  250-PIPELINING
-  250 OPENSESAME
-
-And guess what happens? You are just sitting there,
-wondering what this "pipelining" thing means, then some
-weirdo comes into your office screaming about how your
-extension is a security risk, yadda-yadda-yadda. So what do
-we do? We add access control! ::
-
- > msEndmail :: EventT
- > msEndmail f e@(Unrecognized "opensesame\r\n") = do
- >   sst <- gets sessionState
- >   if sst < HaveHelo
- >      then say 5 0 3 "Please say HELO first."
- >      else compatSendmail f e
- > msEndmail f e = f e
 
 
 Configuring Mail Targets
@@ -312,17 +161,19 @@ daemon ever time. One way to run a test within ``ghci`` is
 to call Postmaster with an input buffer that contains the
 entire SMTP dialogue::
 
-> runTest :: EventT -> [String] -> IO ()
-> runTest f xs =
->   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
->   mkConfig $ \cfg -> do
->     let buf = xs >>= (++"\r\n")
->         n   = length buf
->     withArray (mapEnum buf) $ \p ->
->       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
->     return ()
->   where
->   mapEnum = map (toEnum . fromEnum)
+ TODO: Doesn't work in new design!
+
+ > runTest :: EventT -> [String] -> IO ()
+ > runTest f xs =
+ >   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
+ >   mkConfig $ \cfg -> do
+ >     let buf = xs >>= (++"\r\n")
+ >         n   = length buf
+ >     withArray (mapEnum buf) $ \p ->
+ >       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
+ >     return ()
+ >   where
+ >   mapEnum = map (toEnum . fromEnum)
 
 Given a test session like this ... ::
 
@@ -339,8 +190,8 @@ Given a test session like this ... ::
 ... you can run Postmaster with the ``runTest`` helper.
 That's a good way to test our ``rfc2821`` MTA from above::
 
-> testRfc2821 :: FilePath -> IO ()
-> testRfc2821 path = runTest (rfc2821 path) testMsg
+ > testRfc2821 :: FilePath -> IO ()
+ > testRfc2821 path = runTest (rfc2821 path) testMsg
 
 Run it with ``testRfc2821 "/tmp/important-mail"`` and you'll
 have the data section in that file. Repeated runs will
@@ -471,9 +322,9 @@ and run your MTA::
 
 > stdMTA :: IO ()
 > stdMTA = run stdConfig
->
+
 > runStdMTA :: [String] -> IO ()
-> runStdMTA = runTest stdConfig
+> runStdMTA = undefined -- runTest stdConfig
 
 A good test session should be::
 
@@ -508,7 +359,7 @@ Aliases ... phew. That ought to be difficult? ::
 > alias theDB f e
 >   | AddRcptTo mbox <- e
 >   , Just mbox' <- lookup mbox theDB
->       = trigger eventHandler (AddRcptTo mbox')
+>       = trigger (AddRcptTo mbox')
 >   | otherwise  = f e
 
 The function ``trigger`` is exported by Postmaster. It's a
@@ -538,12 +389,12 @@ actually. But I'd rather define an explicit handler for
 addresses like that. ``alias`` rewrites addresses; nothing
 more, nothing less. Here is a short demo function::
 
-> runAliasTest :: IO ()
-> runAliasTest = runTest (myalias . stdConfig) stdTest
->   where
->   lhs     = read "non.existent@localhost"
->   rhs     = read "root@localhost"
->   myalias = alias [(lhs,rhs)]
+ > runAliasTest :: IO ()
+ > runAliasTest = runTest (myalias . stdConfig) stdTest
+ >   where
+ >   lhs     = read "non.existent@localhost"
+ >   rhs     = read "root@localhost"
+ >   myalias = alias [(lhs,rhs)]
 
 
 You will have noticed that the mechanism doesn't look like
@@ -559,14 +410,14 @@ to have one-to-many mappings, this a simple way to do it::
 >                = mkRhs
 >   | otherwise  = f e
 
-> runExploderTest :: IO ()
-> runExploderTest = runTest (expl . stdConfig) stdTest
->   where
->   expl = explode (read "non.existent@localhost")
->            (do shell [] "cat >/dev/null"
->                shell [] "cat >/dev/null"
->                -- add more
->                say 2 5 0 "great")
+ > runExploderTest :: IO ()
+ > runExploderTest = runTest (expl . stdConfig) stdTest
+ >   where
+ >   expl = explode (read "non.existent@localhost")
+ >            (do shell [] "cat >/dev/null"
+ >                shell [] "cat >/dev/null"
+ >                -- add more
+ >                say 2 5 0 "great")
 
 Cooler Event Handlers
 ---------------------
@@ -666,7 +517,7 @@ Configuring At Run-Time
 > compile Forward mb      = relay [mb]
 > compile (Shell cmd) mb  = shell [mb] cmd
 > compile (User uid) mb   = localMailer mb uid
-> compile (Rewrite mb) _  = trigger eventHandler (AddRcptTo mb)
+> compile (Rewrite mb) _  = trigger (AddRcptTo mb)
 > compile (Explode ts) mb = do
 >   rs <- mapM (\t -> compile t mb) ts
 >   let good (Reply (Code Success _ _) _) = True
@@ -745,80 +596,83 @@ Disallow Routing Addresses
 Dynamic Blacklisting
 ''''''''''''''''''''
 
-::
-
-> data (Typeable a, Show a) => TimeStamped a = TS ClockTime a
->   deriving (Typeable, Show)
->
-> type Blacklist = [TimeStamped HostAddress]
->
-> blacklist :: TimeDiff -> EventT
-> blacklist ttl f e@Greeting = do
->   peer <- asks peerAddr
->   case peer of
->     Nothing                       -> f e
->     Just (SockAddrUnix _)         -> f e
->     Just sa@(SockAddrInet _ addr) -> do
->       now  <- liftIO getClockTime
->       let delta  = addToClockTime ttl
->           stale  = \(TS ts _) -> delta ts < now
->           clean  = reverse . dropWhile stale . reverse
->           expire = maybe [] clean
->       blackl <- global (withval "blacklist" expire)
->       if all (\(TS _ a) -> a /= addr) blackl
->          then f e
->          else do yell (Msg (msg sa))
->                  say 5 5 4 "no SMTP service here"
->   where
->   msg = showString "blacklist: refuse peer " . show
->
-> blacklist _ f e = f e
-
-Now we need a function to add a peer to the blacklist
-whenever we feel like it::
-
-> ban :: Smtpd ()
-> ban = do
->   peer <- asks peerAddr
->   case peer of
->     Nothing                    -> return ()
->     Just (SockAddrUnix _)      -> return ()
->     Just sa@(SockAddrInet _ a) -> do
->       yell (Msg (msg sa))
->       now <- liftIO getClockTime
->       let a'     = TS now a
->           append = maybe [a'] (\as -> a' : as)
->       global (withval "blacklist" append)
->       return ()
->   where
->   msg = showString "black-listing peer: " . show
-
-An SMTP reply code of 221 or 421 from the event handler
-causes Postmaster to drop the connection after the reply::
-
-> bye :: Smtpd SmtpReply
-> bye = do
->   whoami <- myHeloName
->   say 4 2 1 (showString whoami " Hasta la vista, baby.")
+TODO: Doesn't work with new design yet.
 
 ::
 
-> impatient :: Int -> EventT
-> impatient permFailBound f e = do
->   r@(Reply (Code rc _ _) _) <- f e
->   case rc of
->     PermanentFailure -> do
->       c <- local (tick "permFailures")
->       if c >= permFailBound
->          then ban >> bye
->          else return r
->     _ -> return r
+ > data (Typeable a, Show a) => TimeStamped a = TS ClockTime a
+ >   deriving (Typeable, Show)
+ >
+ > type Blacklist = [TimeStamped HostAddress]
+ >
+ > blacklist :: TimeDiff -> EventT
+ > blacklist ttl f e@Greeting = do
+ >   peer <- asks peerAddr
+ >   case peer of
+ >     Nothing                       -> f e
+ >     Just (SockAddrUnix _)         -> f e
+ >     Just sa@(SockAddrInet _ addr) -> do
+ >       now  <- liftIO getClockTime
+ >       let delta  = addToClockTime ttl
+ >           stale  = \(TS ts _) -> delta ts < now
+ >           clean  = reverse . dropWhile stale . reverse
+ >           expire = maybe [] clean
+ >       blackl <- global (withval "blacklist" expire)
+ >       if all (\(TS _ a) -> a /= addr) blackl
+ >          then f e
+ >          else do yell (Msg (msg sa))
+ >                  say 5 5 4 "no SMTP service here"
+ >   where
+ >   msg = showString "blacklist: refuse peer " . show
+ >
+ > blacklist _ f e = f e
+
+ Now we need a function to add a peer to the blacklist
+ whenever we feel like it::
+
+ > ban :: Smtpd ()
+ > ban = do
+ >   peer <- asks peerAddr
+ >   case peer of
+ >     Nothing                    -> return ()
+ >     Just (SockAddrUnix _)      -> return ()
+ >     Just sa@(SockAddrInet _ a) -> do
+ >       yell (Msg (msg sa))
+ >       now <- liftIO getClockTime
+ >       let a'     = TS now a
+ >           append = maybe [a'] (\as -> a' : as)
+ >       global (withval "blacklist" append)
+ >       return ()
+ >   where
+ >   msg = showString "black-listing peer: " . show
+
+ An SMTP reply code of 221 or 421 from the event handler
+ causes Postmaster to drop the connection after the reply::
+
+ > bye :: Smtpd SmtpReply
+ > bye = do
+ >   whoami <- myHeloName
+ >   say 4 2 1 (showString whoami " Hasta la vista, baby.")
+
+ ::
+
+ > impatient :: Int -> EventT
+ > impatient permFailBound f e = do
+ >   r@(Reply (Code rc _ _) _) <- f e
+ >   case rc of
+ >     PermanentFailure -> do
+ >       c <- local (tick "permFailures")
+ >       if c >= permFailBound
+ >          then ban >> bye
+ >          else return r
+ >     _ -> return r
 
 > badass :: EventT
-> badass = blacklist ttl . impatient maxPF . noRouteAddr
->   where
->   ttl   = noTimeDiff { tdMin = 30 }
->   maxPF = 3
+> badass = {- blacklist ttl . impatient maxPF . -} noRouteAddr
+
+ >   where
+ >   ttl   = noTimeDiff { tdMin = 30 }
+ >   maxPF = 3
 
 The Rules Of RFC2821
 --------------------
@@ -958,7 +812,7 @@ Notes
 Change me::
 
 > main :: IO ()
-> main = main' (eventT peti)
+> main = run peti
 
 References
 ----------
@@ -987,5 +841,5 @@ References
 .. ----- Configure Emacs -----
 ..
 .. Local Variables: ***
-.. haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
+.. haskell-program-name: "ghci -ladns -lcrypto" ***
 .. End: ***

@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Event
-   Copyright   :  (c) 2005-02-05 by Peter Simons
+   Copyright   :  (c) 2005-02-06 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -43,7 +43,7 @@ type EventT = (Event -> Smtpd SmtpReply)
 mkEvent :: HostName -> Event -> Smtpd SmtpReply
 mkEvent heloName
   = announce "PIPELINING"
-  . setHeloName heloName
+  . initHeloName heloName
   . setSessionID
   . setMailID
   . setMailFrom
@@ -64,11 +64,13 @@ getSessionState = local $ getDefault "SessionState" Unknown
 
 -- ** Local Variable: @HeloName@
 
--- |Set during the 'Greeting' event.
+-- |Initialized during the 'Greeting' event; will not
+-- overwrite the variable if it does exist already.
 
-setHeloName :: HostName -> EventT
-setHeloName n f e = do
-  when (e == Greeting) (local (setval "HeloName" n))
+initHeloName :: HostName -> EventT
+initHeloName n f e = do
+  when (e == Greeting)
+    (local (withval "HeloName" (maybe n id)) >> return ())
   f e
 
 -- |Will 'fail' when @HeloName@ is not set.
@@ -354,10 +356,3 @@ commitTarget t@(Target rs mh (Live mv)) = do
              else return (Target rs mh Failed)
 
 commitTarget t = yell (UnknownCommitTarget t) >> return t
-
-
--- ----- Configure Emacs -----
---
--- Local Variables: ***
--- haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
--- End: ***

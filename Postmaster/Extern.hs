@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.Extern
-   Copyright   :  (c) 2005-02-05 by Peter Simons
+   Copyright   :  (c) 2005-02-06 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -58,10 +58,3 @@ safeWaitForProcess pid =
     wait    = threadDelay 1000000 -- 1 second
     maxwait = 30000000            -- 30 seconds
     badluck = fail "timeout while waiting for external process"
-
-
--- ----- Configure Emacs -----
---
--- Local Variables: ***
--- haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
--- End: ***
