@@ -5,7 +5,8 @@
 GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -O0 -Wall \
-            -iblockio -ihopenssl -imonadenv -isyslog -ichild \
+	    -iblockio -ihopenssl -imonadenv -isyslog -ichild \
+	    '-\#include <openssl/evp.h>' \
 	    -odir $(OBJDIR) -hidir $(OBJDIR)
 DOCDIR	 := docs
 HADDOCK	 := haddock
