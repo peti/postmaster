@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.FSM
-   Copyright   :  (c) 2005-02-09 by Peter Simons
+   Copyright   :  (c) 2005-02-10 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -8,18 +8,36 @@
    Portability :  Haskell 2-pre
  -}
 
-module Postmaster.FSM where
+module Postmaster.FSM
+  ( mkEvent
+  , announce
+  , queryA, queryPTR, queryMX
+  , feed
+  , isEhloPeer
+  , trigger
+  , myHeloName
+  , getMailFrom
+  , getMailID
+  , getPeerAddr
+  , getPeerHelo
+  , getSessionState
+  )
+  where
 
 import Network ( HostName )
 import Postmaster.Base
+import Postmaster.FSM.Announce
+import Postmaster.FSM.DNSResolver
+import Postmaster.FSM.DataHandler
+import Postmaster.FSM.EhloPeer
 import Postmaster.FSM.EventHandler
 import Postmaster.FSM.HeloName
 import Postmaster.FSM.MailFrom
-import Postmaster.FSM.PeerHelo
-import Postmaster.FSM.Announce
-import Postmaster.FSM.EhloPeer
-import Postmaster.FSM.Spooler
 import Postmaster.FSM.MailID
+import Postmaster.FSM.PeerAddr
+import Postmaster.FSM.PeerHelo
+import Postmaster.FSM.SessionState
+import Postmaster.FSM.Spooler
 import Rfc2821
 
 -- |Generate the standard ESMTP event handler.

@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster
-   Copyright   :  (c) 2005-02-09 by Peter Simons
+   Copyright   :  (c) 2005-02-10 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -23,9 +23,7 @@ module Postmaster
   , module Control.Monad.RWS
   , module Data.Typeable
   , module Network
-  , module Network.BSD
   , module Network.DNS
-  , module Network.Socket
   , module BlockIO
   , module MonadEnv
   , module Rfc2821
@@ -34,8 +32,6 @@ module Postmaster
   where
 
 import Network ( PortID(..) )
-import Network.BSD ( getHostName )
-import Network.Socket hiding ( listen, shutdown, Debug, send, HostAddress )
 import Control.Monad.RWS hiding ( local )
 import Network.DNS hiding ( Debug )
 import Data.Typeable

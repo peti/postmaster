@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.DNSResolver
-   Copyright   :  (c) 2005-02-09 by Peter Simons
+   Copyright   :  (c) 2005-02-10 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -22,6 +22,9 @@ newtype DNSR = DNSR Resolver
 
 dnsResolver :: Variable
 dnsResolver = mkVar "dnsresolver"
+
+setDNSResolver :: Resolver -> EnvT ()
+setDNSResolver f = setval dnsResolver (DNSR f)
 
 getDNSResolver :: Smtpd Resolver
 getDNSResolver = do

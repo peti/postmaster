@@ -37,6 +37,7 @@ SRCS := Postmaster.hs				\
 	Postmaster/FSM/HeloName.hs		\
 	Postmaster/FSM/MailFrom.hs		\
 	Postmaster/FSM/MailID.hs		\
+	Postmaster/FSM/PeerAddr.hs		\
 	Postmaster/FSM/PeerHelo.hs		\
 	Postmaster/FSM/SessionState.hs		\
 	Postmaster/FSM/Spooler.hs		\
@@ -124,7 +125,7 @@ distclean::	clean
 	@rm -rf $(MONODIRS)
 
 redate::
-	redate Postmaster.hs Postmaster/*.hs* tutorial.lhs README
+	redate $(SRCS) tutorial.lhs README
 
 init-src::	$(MONODIRS) $(SRCS)
 	@-mkdir $(DOCDIR)

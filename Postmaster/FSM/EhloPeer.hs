@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.FSM.EhloPeer
-   Copyright   :  (c) 2005-02-09 by Peter Simons
+   Copyright   :  (c) 2005-02-10 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to

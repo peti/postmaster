@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.Main
-   Copyright   :  (c) 2005-02-09 by Peter Simons
+   Copyright   :  (c) 2005-02-10 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -26,10 +26,10 @@ import Network.DNS
 import Foreign
 import Postmaster.Base
 import Postmaster.FSM
-import Postmaster.FSM.EventHandler
-import Postmaster.FSM.DataHandler
-import Postmaster.FSM.SessionState
-import Postmaster.FSM.DNSResolver
+import Postmaster.FSM.SessionState ( setSessionState )
+import Postmaster.FSM.DNSResolver  ( setDNSResolver  )
+import Postmaster.FSM.EventHandler ( setEventHandler )
+import Postmaster.FSM.PeerAddr     ( setPeerAddr     )
 import Postmaster.IO
 import Rfc2821
 import Syslog
@@ -111,10 +111,9 @@ withGlobalEnv :: HostName           -- ^ 'myHeloName'
               -> IO a
 withGlobalEnv myHelo dns eventT f = do
   let eventH  = eventT (mkEvent myHelo)
-      initEnv = do setval (mkVar "DNSResolver") (DNSR dns)
-                   setval (mkVar "EventHandler") (EH eventH)
+      initEnv = do setDNSResolver dns
+                   setEventHandler eventH
   newMVar (execState initEnv emptyEnv) >>= f
-
 
 -- * ESMTP Network Daemon
 
@@ -122,7 +121,7 @@ smtpdServer :: Capacity -> GlobalEnv -> SocketHandler
 smtpdServer cap theEnv =
   handleLazy ReadWriteMode $ \(h, Just sa) -> do
     hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
-    let st = execState (setval (mkVar "PeerAddr") sa) emptyEnv
+    let st = execState (setPeerAddr sa) emptyEnv
     smtpdMain cap theEnv h h st >> return ()
 
 smtpdMain :: Capacity
@@ -164,11 +163,6 @@ main' cap port eventT = do
 
 main :: IO ()
 main = main' 1024 (PortNumber 2525) id
-
--- ** Local Variable: @PeerAddr@
-
-getPeerAddr :: Smtpd (Maybe SockAddr)
-getPeerAddr = local $ getval (mkVar "PeerAddr")
 
 -- ** Logging
 
