@@ -4,7 +4,7 @@ A Walk Through "Config.hs"
 ==========================
 
 :Author: Peter Simons <simons@cryp.to>
-:Date:   2005-02-05
+:Date:   2005-02-06
 :Note:   This text is *nowhere* near being complete.
 
 .. contents::
@@ -23,6 +23,15 @@ with those flags given on the command-line. (If you run
 ``ghci`` from Emacs this should be configured
 automatically.)
 
+I have decided against explaining the internals of the
+daemon. I'll write this text treating the functions
+Postmaster provides just like any other Haskell library. I
+think it is better to do it this way because you, as the
+user, probably don't care how Postmaster works. You only
+care how to configure a real bad-ass MTA. So I'll do just
+that and refer you to the `reference documentation`_ for
+the details.
+
 ::
 
 > module Main where
@@ -30,19 +39,21 @@ automatically.)
 > import System.IO
 > import System.Time
 > import System.Posix.User
-> import Foreign.Marshal.Array ( withArray )
 > import Data.Char
 > import Data.List
-> import Postmaster
+> import Postmaster hiding ( main )
+
+> ioBufferSize :: Capacity
+> ioBufferSize = 1024
 
 > port :: PortID
 > port = PortNumber 2525
 
-> main' :: (Config -> Config) -> IO ()
-> main' f = smtpdMain f port
+> run :: EventT -> IO ()
+> run f = main' ioBufferSize port f
 
-You have a working SMTP daemon now. Just start it as ``main'
-id`` and use a different shell to connect the server::
+You have a working SMTP daemon now. Just start it with ``run
+id`` and ``telnet`` to the server::
 
   $ telnet localhost 2525
   Trying 127.0.0.1...
@@ -62,34 +73,10 @@ The default configuration will ...
 - refuse every RCPT command;
 - thus, refuse DATA commands for lack of recipients.
 
-We can change this configuration through writing additions
-to Postmaster's default event handler, the function::
+Writing Event Handlers
+''''''''''''''''''''''
 
-  event :: Event -> Smtpd SmtpReply
-  type Smtpd a = RWST Config [LogMsg] SmtpdState IO a
-
-And by "writing additions" I mean writing our own version of
-``event`` which handles those events_ we are interested in
-and passes the others on to the standard version. In other
-words, we write transformers for the ``event`` function::
-
- Is in Postmaster.Event now.
-
- > type EventT = (Event -> Smtpd SmtpReply)
- >             -> Event -> Smtpd SmtpReply
-
-Our environment for writing these functions is the ``Smtpd``
-monad -- the heart of Postmaster. In it, we have full access
-to the session's state, to the configuration, and we can log
-messages through the standard function ``tell :: [LogMsg] ->
-Smtpd ()`` provided by ``MonadWriter``. To guarantee a
-certain consistency in the log messages, Postmaster provides
-the wrapper ``yell :: LogEvent -> Smtpd ()``. You will
-usually only need the log event ``Msg String``, which allows
-you to log free-style. [2]_
-
-This bit of knowledge already allows us to write a rather
-useful combinator::
+::
 
 > debugEH :: String -> EventT
 > debugEH name f e = do
@@ -105,16 +92,6 @@ handler with this combinator, we can trace its input and
 output values. With two little helper functions, we can try
 it out right away::
 
-> eventT :: EventT -> (Config -> Config)
-> eventT f cfg = cfg'
->   where
->   cb   = callbacks cfg
->   cb'  = cb { eventHandler = f (eventHandler cb) }
->   cfg' = cfg { callbacks = cb' }
->
-> run :: EventT -> IO ()
-> run f = main' (eventT f)
->
 > mainDebug :: IO ()
 > mainDebug = run (debugEH "default")
 
@@ -124,6 +101,7 @@ the system log file you've configured for ``syslog(3)``)::
 
   SID 1: StartEventHandler "default" Greeting
   SID 1: EventHandlerResult "default" Greeting 220
+
 
 Configuring Mail Targets
 ------------------------
@@ -189,17 +167,19 @@ daemon ever time. One way to run a test within ``ghci`` is
 to call Postmaster with an input buffer that contains the
 entire SMTP dialogue::
 
-> runTest :: EventT -> [String] -> IO ()
-> runTest f xs =             -- TODO: broken in new version!
->   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
->   mkConfig $ \cfg -> do
->     let buf = xs >>= (++"\r\n")
->         n   = length buf
->     withArray (mapEnum buf) $ \p ->
->       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
->     return ()
->   where
->   mapEnum = map (toEnum . fromEnum)
+ TODO: Doesn't work in new design!
+
+ | runTest :: EventT -> [String] -> IO ()
+ | runTest f xs =
+ |   withSyslog "postmaster" [PID, PERROR] LOCAL7 $
+ |   mkConfig $ \cfg -> do
+ |     let buf = xs >>= (++"\r\n")
+ |         n   = length buf
+ |     withArray (mapEnum buf) $ \p ->
+ |       runStateT (smtpdHandler stdout (eventT f cfg) (p,n)) initSmtpd
+ |     return ()
+ |   where
+ |   mapEnum = map (toEnum . fromEnum)
 
 Given a test session like this ... ::
 
@@ -216,8 +196,8 @@ Given a test session like this ... ::
 ... you can run Postmaster with the ``runTest`` helper.
 That's a good way to test our ``rfc2821`` MTA from above::
 
-> testRfc2821 :: FilePath -> IO ()
-> testRfc2821 path = runTest (rfc2821 path) testMsg
+ | testRfc2821 :: FilePath -> IO ()
+ | testRfc2821 path = runTest (rfc2821 path) testMsg
 
 Run it with ``testRfc2821 "/tmp/important-mail"`` and you'll
 have the data section in that file. Repeated runs will
@@ -348,9 +328,9 @@ and run your MTA::
 
 > stdMTA :: IO ()
 > stdMTA = run stdConfig
->
+
 > runStdMTA :: [String] -> IO ()
-> runStdMTA = runTest stdConfig
+> runStdMTA = undefined -- runTest stdConfig
 
 A good test session should be::
 
@@ -385,16 +365,8 @@ Aliases ... phew. That ought to be difficult? ::
 > alias theDB f e
 >   | AddRcptTo mbox <- e
 >   , Just mbox' <- lookup mbox theDB
->       = trigger eventHandler (AddRcptTo mbox')
+>       = trigger (AddRcptTo mbox')
 >   | otherwise  = f e
-
-The function ``trigger`` is exported by Postmaster. It's a
-convenient way of getting the the current configuration and
-calling the event handler with the given parameter. Here is
-the definition::
-
-  trigger :: (Callbacks -> (a -> Smtpd b)) -> a -> Smtpd b
-  trigger f x = asks (f . callbacks) >>= \f' -> f' x
 
 Why do we need ``trigger``? Instead of that definition, we
 could equally well have used::
@@ -415,13 +387,12 @@ actually. But I'd rather define an explicit handler for
 addresses like that. ``alias`` rewrites addresses; nothing
 more, nothing less. Here is a short demo function::
 
-> runAliasTest :: IO ()
-> runAliasTest = runTest (myalias . stdConfig) stdTest
->   where
->   lhs     = read "non.existent@localhost"
->   rhs     = read "root@localhost"
->   myalias = alias [(lhs,rhs)]
-
+ | runAliasTest :: IO ()
+ | runAliasTest = runTest (myalias . stdConfig) stdTest
+ |   where
+ |   lhs     = read "non.existent@localhost"
+ |   rhs     = read "root@localhost"
+ |   myalias = alias [(lhs,rhs)]
 
 You will have noticed that the mechanism doesn't look like
 the usual aliases file. It maps addresses one-to-one, not
@@ -436,21 +407,17 @@ to have one-to-many mappings, this a simple way to do it::
 >                = mkRhs
 >   | otherwise  = f e
 
-> runExploderTest :: IO ()
-> runExploderTest = runTest (expl . stdConfig) stdTest
->   where
->   expl = explode (read "non.existent@localhost")
->            (do shell [] "cat >/dev/null"
->                shell [] "cat >/dev/null"
->                -- add more
->                say 2 5 0 "great")
+ | runExploderTest :: IO ()
+ | runExploderTest = runTest (expl . stdConfig) stdTest
+ |   where
+ |   expl = explode (read "non.existent@localhost")
+ |            (do shell [] "cat >/dev/null"
+ |                shell [] "cat >/dev/null"
+ |                -- add more
+ |                say 2 5 0 "great")
 
 Cooler Event Handlers
 ---------------------
-
-* ``compatSendmail`` breaks pipelining because it tries to
-  simulate state by accessing the input stream
-
 
 The Generic Environment
 '''''''''''''''''''''''
@@ -462,71 +429,44 @@ for a session -- or beyond the life-time of a session?
 For that purpose Postmaster features two finite-map
 environments: a global one, and a per-TCP-session one. These
 environments work almost exactly the like Shell variables
-under Unix do, except for one thing: they are type-safe. ::
-
-  type Environment = FiniteMap String Val
-
-  data Val = forall a. (Show a, Typeable a) => Val a
-
-You don't really have to care about the ``Val`` type. [6]_
-Postmaster's interface to the environment mostly hides it
-from you. Thanks to the wonders of the ``Data.Typeable``
-module, however, we can store any type in the environment
-that is a member of ``Typeable``. To further
-debugging-friendliness of the data structure, the values
-have to be a member of class ``Show`` in addition to that.
-
-Having an environment is nice and good, but the interesting
-part is *modifying* it. In Postmaster, we do it with the
-following primitives::
-
-  type EnvT a = State Environment a
-
-  getval   :: (Show a, Typeable a) => String -> EnvT (Maybe a)
-  getval_  :: (Show a, Typeable a) => String -> EnvT a
-  setval   :: (Show a, Typeable a) => String -> a -> EnvT a
-  unsetval :: String -> EnvT ()
-
-These functions should look strangely familiar. The
-variation ``getval_`` will throw an exception instead of
-returning ``Nothing``. It is probably worth noting that you
-cannot distinguish between "variable is not defined" or
-"variable is defined, but the type is wrong". So if you use
-the same variable to store different types in it, be sure
-that you know what you are doing.
-
-If you want to access a global variable (we'll see how in a
-moment), then stay away from these because they come with
-in-built race conditions, so to speak. This is your
-combinator of choice then::
-
-  withval  :: (Typeable a, Show a, Typeable b, Show b) =>
-              String -> (Maybe a -> b) -> EnvT b
-
-``EnvT`` is an ordinary ``State`` monad, so we can use those
-primitives to construct more complex computations in the
-usual fashion::
-
- TODO:
-
- > (=?) :: (Typeable a, Show a) => String -> a -> EnvT a
- > key =? a = getval key >>= maybe (setval key a) return
-
-Another useful combinator -- which is also exported by
-Postmaster -- is this generic counter::
-
-  tick :: String -> EnvT Int
-  tick key = withval key (\c -> maybe 0 (+1) c)
-
-Now that we can build computations that set, query, and
-modify the environment, we just need a way to run those
-computations in the ``Smtpd`` monad::
+under Unix do. ::
 
   local  :: EnvT a -> Smtpd a
   global :: EnvT a -> Smtpd a
 
-A Bad-Ass MTA
--------------
+Experimental
+''''''''''''
+::
+
+> local_host_names :: [String]
+> local_host_names =
+>   [ "ahlgrimm.info"
+>   , "peti.cryp.to"
+>   , "cryp.to"
+>   , "evildoer.de"
+>   , "klaebe.net"
+>   , "babel.de"
+>   , "eilebrecht.net"
+>   , "babel.org"
+>   , "polizei.net"
+>   , "eilebrecht.us"
+>   , "eilebrecht.biz"
+>   , "babylon.pfm-mainz.de"
+>   , "eilebrecht.org"
+>   , "lists.cryp.to"
+>   , "evil-doer.de"
+>   , "petix.cryp.to"
+>   , "eilebrecht.info"
+>   , "content-management.info"
+>   , "berlininfo.info"
+>   , "delf.nl"
+>   ]
+
+> peti :: EventT
+> peti = badass . localHosts local_host_names . relayAll
+>   where
+>   relayAll _ (AddRcptTo mbox) = relay [mbox]
+>   relayAll f e                = f e
 
 Disallow Routing Addresses
 ''''''''''''''''''''''''''
@@ -545,14 +485,14 @@ Dynamic Blacklisting
 
 ::
 
-> data (Typeable a, Show a) => TimeStamped a = TS ClockTime a
->   deriving (Typeable, Show)
+> data (Typeable a) => TimeStamped a = TS ClockTime a
+>     deriving (Typeable, Show)
 >
 > type Blacklist = [TimeStamped HostAddress]
 >
 > blacklist :: TimeDiff -> EventT
 > blacklist ttl f e@Greeting = do
->   peer <- asks peerAddr
+>   peer <- getPeerAddr
 >   case peer of
 >     Nothing                       -> f e
 >     Just (SockAddrUnix _)         -> f e
@@ -577,7 +517,7 @@ whenever we feel like it::
 
 > ban :: Smtpd ()
 > ban = do
->   peer <- asks peerAddr
+>   peer <- getPeerAddr
 >   case peer of
 >     Nothing                    -> return ()
 >     Just (SockAddrUnix _)      -> return ()
@@ -756,7 +696,7 @@ Notes
 Change me::
 
 > main :: IO ()
-> main = main' (eventT stdConfig)
+> main = run peti
 
 References
 ----------
@@ -777,13 +717,11 @@ References
 
 .. _reference documentation: index.html
 
-.. _configuration: Postmaster.html#2
-
 .. _events: Rfc2821.html#t%3AEvent
 
 
 .. ----- Configure Emacs -----
 ..
 .. Local Variables: ***
-.. haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
+.. haskell-program-name: "ghci -ladns -lcrypto" ***
 .. End: ***

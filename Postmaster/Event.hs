@@ -1,6 +1,7 @@
+{-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Event
-   Copyright   :  (c) 2005-02-05 by Peter Simons
+   Copyright   :  (c) 2005-02-06 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -13,6 +14,7 @@ module Postmaster.Event where
 import Prelude hiding ( catch )
 import Control.Monad.RWS hiding ( local )
 import Data.List ( nub )
+-- import Data.Typeable
 import Control.Exception
 import Control.Concurrent
 import Foreign
@@ -36,14 +38,12 @@ import MonadEnv
 type EventT = (Event -> Smtpd SmtpReply)
             -> Event -> Smtpd SmtpReply
 
-
 -- |Generate the standard ESMTP event handler.
 
 mkEvent :: HostName -> Event -> Smtpd SmtpReply
 mkEvent heloName
   = announce "PIPELINING"
-  . setHeloName heloName
-  . setSessionID
+  . initHeloName heloName
   . setMailID
   . setMailFrom
   . setIsEhloPeer
@@ -59,15 +59,17 @@ setSessionState = local . setval "SessionState"
 -- |Will 'fail' when @SessionState@ is not set.
 
 getSessionState :: Smtpd SessionState
-getSessionState = local $ withval "SessionState" $ maybe Unknown id
+getSessionState = local $ getDefault "SessionState" Unknown
 
 -- ** Local Variable: @HeloName@
 
--- |Set during the 'Greeting' event.
+-- |Initialized during the 'Greeting' event; will not
+-- overwrite the variable if it does exist already.
 
-setHeloName :: HostName -> EventT
-setHeloName n f e = do
-  when (e == Greeting) (local (setval "HeloName" n))
+initHeloName :: HostName -> EventT
+initHeloName n f e = do
+  when (e == Greeting)
+    (local (withval "HeloName" (maybe n id)) >> return ())
   f e
 
 -- |Will 'fail' when @HeloName@ is not set.
@@ -89,7 +91,7 @@ setIsEhloPeer f e = do
   return r
 
 isEhloPeer :: Smtpd Bool
-isEhloPeer = local $ withval "IsEhloPeer" $ maybe False id
+isEhloPeer = local $ getDefault "IsEhloPeer" False
 
 -- ** Local Variable: @PeerHelo@
 
@@ -135,37 +137,12 @@ setRcptTo :: [Target] -> Smtpd ()
 setRcptTo = local . setval "RcptTo"
 
 getRcptTo :: Smtpd [Target]
-getRcptTo = fmap (maybe [] id) (local $ getval "RcptTo")
+getRcptTo = local $ getDefault "RcptTo" []
 
 addRcptTo :: Target -> Smtpd ()
 addRcptTo m = getRcptTo >>= setRcptTo . (m:)
 
-
--- ** Unique Identifier Generation
-
--- |Produce a unique 'ID' using a global counter.
-
-getUniqueID :: Smtpd ID
-getUniqueID = global $ tick "UniqueID"
-
--- *** Local Variable: @SessionID@
-
--- |Provides a unique @SessionID@ variable during the
--- 'Greeting' event
-
-setSessionID :: EventT
-setSessionID f e = do
-  when (e == Greeting)
-       (getUniqueID >>= local . setval "SessionID")
-  f e
-
--- |Will 'fail' when @SessionID@ is not set.
-
-mySessionID :: Smtpd ID
-mySessionID = local $ getval_ "SessionID"
-
-
--- *** Local Variable: @MailID@
+-- ** Local Variable: @MailID@
 
 -- |Set when 'SetMailFrom' succeeds; unset during
 -- 'ResetState'.
@@ -244,7 +221,7 @@ event (SeeksHelp _) =
   say 5 0 4 "I don't implement HELP with parameters."
 
 event (SayHelo _) = do
-  trigger eventHandler ResetState
+  trigger ResetState
   whoami <- myHeloName
   say 2 5 0 (showString whoami " Postmaster; pleased to meet you.")
 
@@ -253,7 +230,7 @@ event (SayHeloAgain peer) = event (SayHelo peer)
 event (SayEhloAgain peer) = event (SayHelo peer)
 
 event (SetMailFrom mbox) = do
-  trigger eventHandler ResetState
+  trigger ResetState
   say 2 5 0 (mbox `shows` " ... sender ok")
 
 event (AddRcptTo mbox) =
@@ -292,8 +269,8 @@ event Deliver = do
 ----------------------------------------------------------------------
 
 feed :: (Ptr Word8, Int) -> Smtpd ()
-feed (ptr,n) = do
-  getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
+feed ( _ , 0) = return ()
+feed (ptr, n) = getRcptTo >>= mapM (feedTarget (ptr,n)) >>= setRcptTo
 
 -- |Make a 'Ready' target 'Live'.
 
@@ -306,7 +283,7 @@ startTarget (Target rs mh@(Pipe path args) Ready) = do
 
 startTarget (Target rs Relay Ready) = do
   from <- getMailFrom
-  mta <- asks sendmailPath
+  let mta = "/usr/sbin/sendmail"  -- TODO
   let flags = [ "-f" ++ show from ] ++ map show rs
       t'    = Target rs (Pipe mta flags) Ready
   Target _ _ mst <- startTarget t'
@@ -353,10 +330,3 @@ commitTarget t@(Target rs mh (Live mv)) = do
              else return (Target rs mh Failed)
 
 commitTarget t = yell (UnknownCommitTarget t) >> return t
-
-
--- ----- Configure Emacs -----
---
--- Local Variables: ***
--- haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
--- End: ***

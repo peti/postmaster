@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.Target
-   Copyright   :  (c) 2005-02-05 by Peter Simons
+   Copyright   :  (c) 2005-02-06 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -53,10 +53,3 @@ relay :: [Mailbox] -> Smtpd SmtpReply
 relay rs = do
   addRcptTo $ Target rs Relay Ready
   say 2 5 0 "recipient ok"
-
-
--- ----- Configure Emacs -----
---
--- Local Variables: ***
--- haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
--- End: ***

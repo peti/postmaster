@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster
-   Copyright   :  (c) 2005-02-05 by Peter Simons
+   Copyright   :  (c) 2005-02-06 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -22,17 +22,19 @@ module Postmaster
   ( module Postmaster.Base
   , module Postmaster.Event
   , module Postmaster.Extern
+  , module Postmaster.IO
   , module Postmaster.Main
   , module Postmaster.Target
-  , module Rfc2821
-  , module Network.DNS
-  , module MonadEnv
   , module Control.Monad.RWS
-  , module Network
   , module Data.Typeable
-  , module Syslog
+  , module Network
   , module Network.BSD
+  , module Network.DNS
   , module Network.Socket
+  , module BlockIO
+  , module MonadEnv
+  , module Rfc2821
+  , module Syslog
   )
   where
 
@@ -45,15 +47,16 @@ import Data.Typeable
 import MonadEnv
 import Rfc2821 hiding ( path )
 import Syslog
+import BlockIO ( Capacity )
 import Postmaster.Base
-import Postmaster.Main
 import Postmaster.Event
 import Postmaster.Extern
+import Postmaster.IO
+import Postmaster.Main
 import Postmaster.Target
-
 
 -- ----- Configure Emacs -----
 --
 -- Local Variables: ***
--- haskell-ghci-program-args: ( "-ladns" "-lcrypto" ) ***
+-- haskell-program-name: "ghci -ladns -lcrypto" ***
 -- End: ***
