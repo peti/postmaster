@@ -7,7 +7,7 @@
    Stability   :  provisional
    Portability :  Haskell 2-pre
 
-   Postmaster's IO driver for "BlockIO" and general
+   Postmaster's IO driver for "System.IO.Driver" and general
    initialization functions.
  -}
 
@@ -31,15 +31,15 @@ import Postmaster.FSM.EventHandler ( setEventHandler )
 import Postmaster.FSM.PeerAddr     ( setPeerAddr     )
 import Postmaster.FSM.SessionState ( setSessionState )
 import Postmaster.IO
-import Rfc2821
+import Text.ParserCombinators.Parsec.Rfc2821
 import Syslog
-import BlockIO
+import System.IO.Driver
 import MonadEnv
 
 -- * Speaking ESMTP
 
 -- |This function ties it all together to build a
--- 'BlockHandler' for "BlockIO".
+-- 'BlockHandler' for "System.IO.Driver".
 
 smtpdHandler :: WriteHandle -> GlobalEnv -> BlockHandler SmtpdState
 smtpdHandler hOut theEnv buf = runSmtpd (smtpd buf >>= handler) theEnv

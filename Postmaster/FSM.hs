@@ -38,7 +38,7 @@ import Postmaster.FSM.PeerAddr
 import Postmaster.FSM.PeerHelo
 import Postmaster.FSM.SessionState
 import Postmaster.FSM.Spooler
-import Rfc2821
+import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Generate the standard ESMTP event handler. The
 -- parameters are the path to the spool directory and our

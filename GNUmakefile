@@ -4,10 +4,9 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O0 -Wall \
-	    -iblockio -ihopenssl -imonadenv -isyslog -ichild \
-	    '-\#include <openssl/evp.h>' \
-	    -odir $(OBJDIR) -hidir $(OBJDIR)
+HFLAGS	 := -threaded -O0 -Wall -ihopenssl -imonadenv \
+	    -isyslog -odir $(OBJDIR) -hidir $(OBJDIR) \
+	    '-\#include <openssl/evp.h>'
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
@@ -20,7 +19,7 @@ HDIFILES := \
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := blockio child hopenssl monadenv syslog
+MONODIRS := hopenssl monadenv syslog
 
 ##### build postmaster binary
 
@@ -43,8 +42,6 @@ SRCS := Postmaster.hs				\
 	Postmaster/FSM/Spooler.hs		\
 	Postmaster/IO.hs			\
 	Postmaster/Main.hs			\
-	blockio/BlockIO.hs			\
-	child/Child.hs				\
 	hopenssl/Digest.hs			\
 	monadenv/MonadEnv.hs			\
 	syslog/Syslog.hs

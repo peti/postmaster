@@ -24,9 +24,9 @@ module Postmaster
   , module Data.Typeable
   , module Network
   , module Network.DNS
-  , module BlockIO
+  , module System.IO.Driver
   , module MonadEnv
-  , module Rfc2821
+  , module Text.ParserCombinators.Parsec.Rfc2821
   , module Syslog
   )
   where
@@ -36,9 +36,9 @@ import Control.Monad.RWS hiding ( local )
 import Network.DNS hiding ( Debug )
 import Data.Typeable
 import MonadEnv
-import Rfc2821 hiding ( path )
+import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 import Syslog
-import BlockIO ( Capacity )
+import System.IO.Driver ( Capacity )
 import Postmaster.Base
 import Postmaster.FSM
 import Postmaster.IO

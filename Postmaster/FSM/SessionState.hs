@@ -12,7 +12,7 @@ module Postmaster.FSM.SessionState where
 
 import Postmaster.Base
 import MonadEnv
-import Rfc2821
+import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Local Variable: @SESSIONSTATE :: 'SessionState'@
 

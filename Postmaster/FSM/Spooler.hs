@@ -22,8 +22,8 @@ import Postmaster.FSM.SessionState
 import Postmaster.FSM.DataHandler
 import Postmaster.FSM.MailID
 import MonadEnv
-import Rfc2821 hiding ( path )
-import BlockIO
+import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
+import System.IO.Driver
 import Digest
 
 sha1Engine :: SmtpdVariable
