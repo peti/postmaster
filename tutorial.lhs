@@ -4,7 +4,7 @@ A Walk Through "Config.hs"
 ==========================
 
 :Author: Peter Simons <simons@cryp.to>
-:Date:   2005-02-09
+:Date:   2005-02-10
 :Note:   This text is *nowhere* near being complete.
 
 .. contents::
@@ -39,10 +39,9 @@ the details.
 > import System.IO
 > import System.Time
 > import System.Posix.User
+> import Network.Socket ( SockAddr(..) )
 > import Data.Char
 > import Data.List
-> import Postmaster.FSM.EventHandler
-> import Postmaster.FSM.HeloName
 > import Postmaster hiding ( main )
 
 > ioBufferSize :: Capacity
@@ -342,26 +341,26 @@ Dynamic Blacklisting
 > type Blacklist = [TimeStamped HostAddress]
 >
 > blacklist :: TimeDiff -> EventT
-> blacklist ttl f e@Greeting = do
->   peer <- getPeerAddr
->   case peer of
->     Nothing                       -> f e
->     Just (SockAddrUnix _)         -> f e
->     Just sa@(SockAddrInet _ addr) -> do
->       now  <- liftIO getClockTime
->       let delta  = addToClockTime ttl
->           stale  = \(TS ts _) -> delta ts < now
->           clean  = reverse . dropWhile stale . reverse
->           expire = maybe [] clean
->       blackl <- global (withval (mkVar "blacklist") expire)
->       if all (\(TS _ a) -> a /= addr) blackl
->          then f e
->          else do yell (Msg (msg sa))
->                  say 5 5 4 "no SMTP service here"
+> blacklist ttl f e = do
+>   r <- f e
+>   if e /= Greeting || isFailure r then return r else do
+>     peer <- getPeerAddr
+>     case peer of
+>       Nothing                       -> return r
+>       Just (SockAddrUnix _)         -> return r
+>       Just sa@(SockAddrInet _ addr) -> do
+>         now <- liftIO getClockTime
+>         let delta  = addToClockTime ttl
+>             stale  = \(TS ts _) -> delta ts < now
+>             clean  = reverse . dropWhile stale . reverse
+>             expire = maybe [] clean
+>         blackl <- global (withval (mkVar "blacklist") expire)
+>         if all (\(TS _ a) -> a /= addr) blackl
+>             then return r
+>             else do yell (Msg (msg sa))
+>                     say 5 5 4 "no SMTP service here"
 >   where
 >   msg = showString "blacklist: refuse peer " . show
->
-> blacklist _ f e = f e
 
 Now we need a function to add a peer to the blacklist
 whenever we feel like it::
