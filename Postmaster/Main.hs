@@ -16,6 +16,7 @@ module Postmaster.Main where
 
 import Prelude hiding ( catch )
 import Data.Maybe
+import Data.Typeable
 import Control.Exception
 import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
@@ -42,13 +43,15 @@ import MonadEnv
 -- create the global environment and 'emptyEnv' to
 -- initialize the 'SmtpdState'.
 
-runSmtpd' :: Logger -> Smtpd a -> GlobalEnv -> SmtpdState -> IO (a, SmtpdState)
+runSmtpd' :: Logger -> Smtpd a -> GlobalEnv -> SmtpdState
+          -> IO (a, SmtpdState)
 runSmtpd' logger f = runStateT . withLogger logger f
 
 -- |Convenience wrapper for 'runSmtpd'' with 'Logger'
 -- hard-coded to 'syslogger'.
 
-runSmtpd :: Smtpd a -> GlobalEnv -> SmtpdState -> IO (a, SmtpdState)
+runSmtpd :: Smtpd a -> GlobalEnv -> SmtpdState
+         -> IO (a, SmtpdState)
 runSmtpd = runSmtpd' syslogger
 
 -- ** Initialize Global Environment
@@ -87,7 +90,6 @@ withLogger logger f theEnv = do
 syslogger :: Logger
 syslogger (LogMsg sid _ e) = syslog Info $
   showString "SID " . shows sid . (':':) . (' ':) $ show e
-
 
 -- * The ESMTP Server
 
@@ -142,26 +144,31 @@ handleDialog line' = do
     _                                   -> setSessionState sst'
   return r
 
-
 -- * ESMTP Network Daemon
 
 smtpdHandler :: WriteHandle -> GlobalEnv -> BlockHandler SmtpdState
 smtpdHandler hOut theEnv buf = runSmtpd (smtpd hOut buf) theEnv
 
-smtpdMain :: Capacity -> ReadHandle -> WriteHandle -> GlobalEnv -> IO ()
-smtpdMain cap hIn hOut theEnv = do
+smtpdMain :: Capacity
+          -> ReadHandle
+          -> WriteHandle
+          -> GlobalEnv
+          -> SmtpdState
+          -> IO ()
+smtpdMain cap hIn hOut theEnv initST = do
   let greet = do r <- trigger Greeting
                  safeReply hOut r >> safeFlush hOut
                  to <- getReadTimeout
                  sid <- mySessionID
                  return (r, to, sid)
-  ((r, to, sid), st) <- runSmtpd greet theEnv emptyEnv
+  ((r, to, sid), st) <- runSmtpd greet theEnv initST
   let Reply (Code rc _ _) _ = r
   when (rc == Success) $ do
     let getTO  = evalState (getDefault "ReadTimeout" to)
         yellIO = syslogger . LogMsg sid st
+        hMain  = smtpdHandler hOut theEnv
     catch
-      (runLoopNB getTO hIn cap (smtpdHandler hOut theEnv) st >> return ())
+      (runLoopNB getTO hIn cap hMain st >> return ())
       (\e -> case e of
          IOException ie -> yellIO (CaughtIOError ie)
          _              -> yellIO (CaughtException e))
@@ -180,14 +187,23 @@ main' cap port eventT = do
           loop theEnv s
   where
   loop theEnv ls = do
-    (s,sa) <- accept ls
+    (s, sa) <- accept ls
     spawn (server theEnv (s,sa) `finally` sClose s)
     loop theEnv ls
   server theEnv (s,sa) = do
     setSocketOption s KeepAlive 1
     h <- socketToHandle s ReadWriteMode
     hSetBuffering h (BlockBuffering (Just (fromIntegral cap)))
-    smtpdMain cap h h theEnv `finally` hClose h
+    let st = execState (setval "PeerAddr" (PeerAddr sa)) emptyEnv
+    smtpdMain cap h h theEnv st `finally` hClose h
 
 main :: IO ()
 main = main' 1024 (PortNumber 2525) id
+
+data PeerAddr = PeerAddr SockAddr
+              deriving (Typeable, Show)
+
+getPeerAddr :: Smtpd (Maybe SockAddr)
+getPeerAddr =
+  local (getval "PeerAddr") >>=
+    return . maybe Nothing (\(PeerAddr a) -> Just a)

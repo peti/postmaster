@@ -44,7 +44,6 @@ mkEvent :: HostName -> Event -> Smtpd SmtpReply
 mkEvent heloName
   = announce "PIPELINING"
   . initHeloName heloName
-  . setSessionID
   . setMailID
   . setMailFrom
   . setIsEhloPeer
@@ -143,32 +142,7 @@ getRcptTo = local $ getDefault "RcptTo" []
 addRcptTo :: Target -> Smtpd ()
 addRcptTo m = getRcptTo >>= setRcptTo . (m:)
 
-
--- ** Unique Identifier Generation
-
--- |Produce a unique 'ID' using a global counter.
-
-getUniqueID :: Smtpd ID
-getUniqueID = global $ tick "UniqueID"
-
--- *** Local Variable: @SessionID@
-
--- |Provides a unique @SessionID@ variable during the
--- 'Greeting' event
-
-setSessionID :: EventT
-setSessionID f e = do
-  when (e == Greeting)
-       (getUniqueID >>= local . setval "SessionID")
-  f e
-
--- |Will 'fail' when @SessionID@ is not set.
-
-mySessionID :: Smtpd ID
-mySessionID = local $ getval_ "SessionID"
-
-
--- *** Local Variable: @MailID@
+-- ** Local Variable: @MailID@
 
 -- |Set when 'SetMailFrom' succeeds; unset during
 -- 'ResetState'.

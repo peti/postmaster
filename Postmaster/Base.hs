@@ -30,13 +30,6 @@ import Postmaster.Extern
 
 type SmtpdState = Env
 type Smtpd a    = RWST GlobalEnv [LogMsg] SmtpdState IO a
-type ID         = Int
-
-local :: (MonadState Env m) => EnvT a -> m a
-local f = do
-  (a, st) <- gets (runState f)
-  put st
-  return a
 
 -- |@say a b c msg = return ('reply' a b c [msg])@
 --
@@ -58,10 +51,34 @@ local f = do
 say :: Int -> Int -> Int -> String -> Smtpd SmtpReply
 say a b c msg = return (reply a b c [msg])
 
--- ** Global Environment
+-- ** Environment
 
 global :: EnvT a -> Smtpd a
 global f = ask >>= liftIO . global' f
+
+local :: (MonadState Env m) => EnvT a -> m a
+local f = do
+  (a, st) <- gets (runState f)
+  put st
+  return a
+
+type ID = Int
+
+-- |Produce a unique 'ID' using a global counter.
+
+getUniqueID :: Smtpd ID
+getUniqueID = global $ tick "UniqueID"
+
+-- |Provides a unique 'ID' for this session.
+
+mySessionID :: Smtpd ID
+mySessionID = do
+  sid' <- local (getval "SessionID")
+  case sid' of
+    Just sid -> return sid
+    _        -> do sid <- getUniqueID
+                   local $ setval "SessionID" sid
+                   return sid
 
 -- ** Event Handler
 
@@ -123,6 +140,16 @@ data MailerStatus
 data LogMsg = LogMsg ID SmtpdState LogEvent
             deriving (Show)
 
+-- |Given a log event, construct a 'LogMsg' and write it to
+-- the monad's log stream with 'tell'. Every log event
+-- contains the current 'SmtpdState' and the \"SessionID\".
+
+yell :: LogEvent -> Smtpd ()
+yell e = do
+  sid <- mySessionID
+  st <- get
+  tell [LogMsg sid st e]
+
 data LogEvent
   = Msg String
   | StartSession
@@ -145,17 +172,6 @@ data LogEvent
   | FeedTarget Target String
   | ExternalResult Target ExitCode
   deriving (Show)
-
--- |Given a log event, construct a 'LogMsg' and write it to
--- the monad's log stream with 'tell'. Every log event
--- contains the current 'SmtpdState' and the \"SessionID\".
-
-yell :: LogEvent -> Smtpd ()
-yell e = do
-  sid <- local $ getDefault "SessionID" (-1)
-  st <- get
-  tell [LogMsg sid st e]
-
 
 instance Show ExternHandle where
   show _ = "<ExternHandle>"

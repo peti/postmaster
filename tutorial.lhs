@@ -35,7 +35,7 @@ the details.
 > module Main where
 >
 > import System.IO
-> -- import System.Time
+> import System.Time
 > import System.Posix.User
 > -- import Foreign.Marshal.Array ( withArray )
 > import Data.Char
@@ -436,65 +436,7 @@ for a session -- or beyond the life-time of a session?
 For that purpose Postmaster features two finite-map
 environments: a global one, and a per-TCP-session one. These
 environments work almost exactly the like Shell variables
-under Unix do, except for one thing: they are type-safe. ::
-
-  type Environment = FiniteMap String Val
-
-  data Val = forall a. (Show a, Typeable a) => Val a
-
-You don't really have to care about the ``Val`` type. [6]_
-Postmaster's interface to the environment mostly hides it
-from you. Thanks to the wonders of the ``Data.Typeable``
-module, however, we can store any type in the environment
-that is a member of ``Typeable``. To further
-debugging-friendliness of the data structure, the values
-have to be a member of class ``Show`` in addition to that.
-
-Having an environment is nice and good, but the interesting
-part is *modifying* it. In Postmaster, we do it with the
-following primitives::
-
-  type EnvT a = State Environment a
-
-  getval   :: (Show a, Typeable a) => String -> EnvT (Maybe a)
-  getval_  :: (Show a, Typeable a) => String -> EnvT a
-  setval   :: (Show a, Typeable a) => String -> a -> EnvT a
-  unsetval :: String -> EnvT ()
-
-These functions should look strangely familiar. The
-variation ``getval_`` will throw an exception instead of
-returning ``Nothing``. It is probably worth noting that you
-cannot distinguish between "variable is not defined" or
-"variable is defined, but the type is wrong". So if you use
-the same variable to store different types in it, be sure
-that you know what you are doing.
-
-If you want to access a global variable (we'll see how in a
-moment), then stay away from these because they come with
-in-built race conditions, so to speak. This is your
-combinator of choice then::
-
-  withval  :: (Typeable a, Show a, Typeable b, Show b) =>
-              String -> (Maybe a -> b) -> EnvT b
-
-``EnvT`` is an ordinary ``State`` monad, so we can use those
-primitives to construct more complex computations in the
-usual fashion::
-
- TODO:
-
- > (=?) :: (Typeable a, Show a) => String -> a -> EnvT a
- > key =? a = getval key >>= maybe (setval key a) return
-
-Another useful combinator -- which is also exported by
-Postmaster -- is this generic counter::
-
-  tick :: String -> EnvT Int
-  tick key = withval key (\c -> maybe 0 (+1) c)
-
-Now that we can build computations that set, query, and
-modify the environment, we just need a way to run those
-computations in the ``Smtpd`` monad::
+under Unix do. ::
 
   local  :: EnvT a -> Smtpd a
   global :: EnvT a -> Smtpd a
@@ -596,83 +538,78 @@ Disallow Routing Addresses
 Dynamic Blacklisting
 ''''''''''''''''''''
 
-TODO: Doesn't work with new design yet.
+> data (Typeable a) => TimeStamped a = TS ClockTime a
+>     deriving (Typeable, Show)
+>
+> type Blacklist = [TimeStamped HostAddress]
+>
+> blacklist :: TimeDiff -> EventT
+> blacklist ttl f e@Greeting = do
+>   peer <- getPeerAddr
+>   case peer of
+>     Nothing                       -> f e
+>     Just (SockAddrUnix _)         -> f e
+>     Just sa@(SockAddrInet _ addr) -> do
+>       now  <- liftIO getClockTime
+>       let delta  = addToClockTime ttl
+>           stale  = \(TS ts _) -> delta ts < now
+>           clean  = reverse . dropWhile stale . reverse
+>           expire = maybe [] clean
+>       blackl <- global (withval "blacklist" expire)
+>       if all (\(TS _ a) -> a /= addr) blackl
+>          then f e
+>          else do yell (Msg (msg sa))
+>                  say 5 5 4 "no SMTP service here"
+>   where
+>   msg = showString "blacklist: refuse peer " . show
+>
+> blacklist _ f e = f e
+
+Now we need a function to add a peer to the blacklist
+whenever we feel like it::
+
+> ban :: Smtpd ()
+> ban = do
+>   peer <- getPeerAddr
+>   case peer of
+>     Nothing                    -> return ()
+>     Just (SockAddrUnix _)      -> return ()
+>     Just sa@(SockAddrInet _ a) -> do
+>       yell (Msg (msg sa))
+>       now <- liftIO getClockTime
+>       let a'     = TS now a
+>           append = maybe [a'] (\as -> a' : as)
+>       global (withval "blacklist" append)
+>       return ()
+>   where
+>   msg = showString "black-listing peer: " . show
+
+An SMTP reply code of 221 or 421 from the event handler
+causes Postmaster to drop the connection after the reply::
+
+> bye :: Smtpd SmtpReply
+> bye = do
+>   whoami <- myHeloName
+>   say 4 2 1 (showString whoami " Hasta la vista, baby.")
 
 ::
 
- > data (Typeable a, Show a) => TimeStamped a = TS ClockTime a
- >   deriving (Typeable, Show)
- >
- > type Blacklist = [TimeStamped HostAddress]
- >
- > blacklist :: TimeDiff -> EventT
- > blacklist ttl f e@Greeting = do
- >   peer <- asks peerAddr
- >   case peer of
- >     Nothing                       -> f e
- >     Just (SockAddrUnix _)         -> f e
- >     Just sa@(SockAddrInet _ addr) -> do
- >       now  <- liftIO getClockTime
- >       let delta  = addToClockTime ttl
- >           stale  = \(TS ts _) -> delta ts < now
- >           clean  = reverse . dropWhile stale . reverse
- >           expire = maybe [] clean
- >       blackl <- global (withval "blacklist" expire)
- >       if all (\(TS _ a) -> a /= addr) blackl
- >          then f e
- >          else do yell (Msg (msg sa))
- >                  say 5 5 4 "no SMTP service here"
- >   where
- >   msg = showString "blacklist: refuse peer " . show
- >
- > blacklist _ f e = f e
-
- Now we need a function to add a peer to the blacklist
- whenever we feel like it::
-
- > ban :: Smtpd ()
- > ban = do
- >   peer <- asks peerAddr
- >   case peer of
- >     Nothing                    -> return ()
- >     Just (SockAddrUnix _)      -> return ()
- >     Just sa@(SockAddrInet _ a) -> do
- >       yell (Msg (msg sa))
- >       now <- liftIO getClockTime
- >       let a'     = TS now a
- >           append = maybe [a'] (\as -> a' : as)
- >       global (withval "blacklist" append)
- >       return ()
- >   where
- >   msg = showString "black-listing peer: " . show
-
- An SMTP reply code of 221 or 421 from the event handler
- causes Postmaster to drop the connection after the reply::
-
- > bye :: Smtpd SmtpReply
- > bye = do
- >   whoami <- myHeloName
- >   say 4 2 1 (showString whoami " Hasta la vista, baby.")
-
- ::
-
- > impatient :: Int -> EventT
- > impatient permFailBound f e = do
- >   r@(Reply (Code rc _ _) _) <- f e
- >   case rc of
- >     PermanentFailure -> do
- >       c <- local (tick "permFailures")
- >       if c >= permFailBound
- >          then ban >> bye
- >          else return r
- >     _ -> return r
+> impatient :: Int -> EventT
+> impatient permFailBound f e = do
+>   r@(Reply (Code rc _ _) _) <- f e
+>   case rc of
+>     PermanentFailure -> do
+>       c <- local (tick "permFailures")
+>       if c >= permFailBound
+>          then ban >> bye
+>          else return r
+>     _ -> return r
 
 > badass :: EventT
-> badass = {- blacklist ttl . impatient maxPF . -} noRouteAddr
-
- >   where
- >   ttl   = noTimeDiff { tdMin = 30 }
- >   maxPF = 3
+> badass = blacklist ttl . impatient maxPF . noRouteAddr
+>   where
+>   ttl   = noTimeDiff { tdMin = 30 }
+>   maxPF = 3
 
 The Rules Of RFC2821
 --------------------
