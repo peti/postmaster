@@ -14,7 +14,7 @@ import Control.Monad
 import Network ( HostName )
 import Postmaster.Base
 import MonadEnv
-import Rfc2821
+import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Local Variable: @PEERHELO :: 'HostName'@
 

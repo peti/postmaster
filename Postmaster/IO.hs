@@ -21,9 +21,9 @@ import System.IO
 import Network ( listenOn, PortID(..) )
 import Network.Socket
 import Postmaster.Base
-import Rfc2821
-import BlockIO
-import Child
+import Text.ParserCombinators.Parsec.Rfc2821
+import System.IO.Driver
+import Control.Timeout
 import MonadEnv
 
 -- * Socket Handlers
@@ -61,7 +61,7 @@ handleLazy m f (s,sa) =
 -- * Non-blocking I\/O
 
 -- |The exception we throw when writes time out.
--- 'ReadTimeout' is throw by "BlockIO".
+-- 'ReadTimeout' is throw by "System.IO.Driver".
 
 data WriteTimeout = WriteTimeout Timeout
                   deriving (Typeable, Show)

@@ -18,9 +18,9 @@ import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
 import MonadEnv
-import BlockIO
+import System.IO.Driver
 import Data.Typeable
-import Rfc2821 hiding ( path )
+import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
 
 -- * The @Smtpd@ Monad
 
