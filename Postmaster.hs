@@ -376,25 +376,14 @@ global f = asks globalEnv >>= global' f
 
 -- ** DNS Resolving
 
-query :: (Resolver -> a -> IO (Either Status [b])) -> a
-      -> Smtpd (Maybe [b])
-query f x = do
-  dns <- asks (queryDNS . callbacks)
-  r <- liftIO (f dns x)
-  return $ case r of
-    Left rc -> if rc == sNXDOMAIN
-                  then Just []
-                  else Nothing
-    Right r' -> Just r'
-
 queryA :: HostName -> Smtpd (Maybe [HostAddress])
-queryA = query resolveA
+queryA h = asks (queryDNS . callbacks) >>= \r -> liftIO $ query resolveA r h
 
 queryPTR :: HostAddress -> Smtpd (Maybe [HostName])
-queryPTR = query resolvePTR
+queryPTR h = asks (queryDNS . callbacks) >>= \r -> liftIO $ query resolvePTR r h
 
 queryMX :: HostName -> Smtpd (Maybe [(HostName, HostAddress)])
-queryMX = query resolveMX
+queryMX h = asks (queryDNS . callbacks) >>= \r -> liftIO $ query resolveMX r h
 
 -- ** Logging
 
