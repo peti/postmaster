@@ -44,8 +44,9 @@ SRCS := Postmaster.hs				\
 	Postmaster/FSM/Spooler.hs		\
 	Postmaster/IO.hs			\
 	Postmaster/Main.hs			\
-	blockio/BlockIO.hs			\
-	child/Child.hs				\
+	blockio/System/IO/Driver.hs		\
+	child/Control/Concurrent/Child.hs	\
+	child/Control/Timeout.hs		\
 	dns/Data/Endian.hs			\
 	dns/Network/DNS.hs			\
 	dns/Network/DNS/ADNS.hs			\
@@ -53,9 +54,8 @@ SRCS := Postmaster.hs				\
 	dns/Network/IP/Address.hs		\
 	dns/System/Posix/GetTimeOfDay.hs	\
 	dns/System/Posix/Poll.hs		\
-	email/Rfc2234.hs			\
-	email/Rfc2821.hs			\
-	email/Rfc2822.hs			\
+	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
+	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
 	hopenssl/Digest.hs			\
 	monadenv/MonadEnv.hs			\
 	syslog/Syslog.hs
