@@ -11,7 +11,7 @@ HFLAGS	 := -threaded -Wall -O2 -funbox-strict-fields 	\
 	    -ignore-package hsdns    -idns  '-\#include <adns.h>' '-\#include <sys/poll.h>' \
 	    -ignore-package hsemail  -iemail		\
 	    -ignore-package monadenv -imonadenv		\
-	    -ihopenssl '-\#include <openssl/evp.h>' 	\
+	    -ignore-package hopenssl -ihopenssl '-\#include <openssl/evp.h>' 	\
 	    -isyslog
 DOCDIR	 := docs
 HADDOCK	 := haddock
