@@ -43,7 +43,7 @@ listener p h = bracket (listenOn p) (sClose) (acceptor h)
 
 acceptor :: SocketHandler -> Socket -> IO ()
 acceptor h ls = do
-  bracketOnError
+  Postmaster.Base.bracketOnError
     (accept ls)
     (sClose . fst)
     (\peer@(s,_) -> fork $ h peer `finally` sClose s)
