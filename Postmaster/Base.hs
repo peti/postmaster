@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Base
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2005-06-23 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -153,6 +153,24 @@ fallback f g = do
   tell w
   put st'
   return r
+
+-- |Like bracket, but only performs the final action if
+-- there was an exception raised by the in-between
+-- computation. GHC 6.5 provides this function in
+-- "Control.Exception".
+
+bracketOnError
+	:: IO a		-- ^ computation to run first (\"acquire resource\")
+	-> (a -> IO b)  -- ^ computation to run last (\"release resource\")
+	-> (a -> IO c)	-- ^ computation to run in-between
+	-> IO c		-- returns the value from the in-between computation
+bracketOnError before after thing =
+  block (do
+    a <- before
+    catch
+	(unblock (thing a))
+	(\e -> do { after a; throw e })
+ )
 
 -- * Resource Management
 
