@@ -1,7 +1,7 @@
 Postmaster ESMTP Server
 =======================
 
-:Latest Release: postmaster-2005-02-13.tar.gz_
+:Latest Release: postmaster-2005-06-23.tar.gz_
 :Darcs:          darcs_ get http://postmaster.cryp.to/ postmaster
 
 .. contents::
@@ -118,23 +118,6 @@ What can it *not* do?
   the inside. It's not beautiful, but it will work very
   reliably until Postmaster's own delivery agent is ready.
 
-How is the performance?
-'''''''''''''''''''''''
-
-  I have not run extensive tests due to the lack of
-  available benchmark programs. But the few
-  ad-hoc experiments attempted showed pretty good
-  performance. As you will have guessed, Postmaster does not
-  ``fork(2)`` to handle connections concurrently. Instead it
-  multiplexes an arbitrary number of connections internally
-  using ``select(2)``. This alone makes Postmaster far more
-  efficient on high-traffic sites than any other MTA I'd
-  know. In addition to that, the ``BlockIO`` module on which
-  Postmaster is based turned out to be equally fast as an
-  I/O driver written in C would be. So all in all, I'd be
-  *very* surprised if Postmaster isn't at least as efficient
-  as any of the other MTAs is.
-
 Documentation
 -------------
 
@@ -147,10 +130,9 @@ Documentation
 Building Postmaster
 -------------------
 
-  To compile the software, you need a bleeding-edge version
-  of GHC_. I use the current CVS HEAD. *That* bleeding-edge.
-  Furthermore, you'll need the `GNU adns`_ library and
-  OpenSSL_ installed.
+  To compile the software, you need GHC_ version 6.4 or
+  later. Furthermore, you'll need the `GNU adns`_ library
+  and OpenSSL_ installed.
 
   Once you've fetched the sources, do the following:
 
@@ -171,19 +153,9 @@ Building Postmaster
 
      then your OpenSSL version doesn't contain the MDC2 hash
      algorithm yet. That's no problem ... just comment out
-     the three (or so) references to it in
-     ``hopenssl/Digest.hs``.
-
-  4) If you get this compiler error::
-
-      Compiling ADNS
-      /tmp/ghc23589.hc:12:23: ADNS_stub.h:
-                No such file or directory
-
-     then you have a GHC version which contains a bug that
-     causes compilation to fail when ``-threaded`` is used
-     with ``-O``. Disable optimization in ``HFLAGS`` to work
-     around this.
+     the (three or so) references to it in
+     ``hopenssl/Digest.hs`` -- or upgrade to OpenSSL 0.9.7e
+     or later.
 
 Copyleft
 --------
@@ -207,7 +179,7 @@ Copyleft
 
 .. _Sendmail: http://sendmail.org/
 
-.. _postmaster-2005-02-13.tar.gz: http://postmaster.cryp.to/postmaster-2005-02-13.tar.gz
+.. _postmaster-2005-06-23.tar.gz: http://postmaster.cryp.to/postmaster-2005-06-23.tar.gz
 
 .. _known events: docs/Rfc2821.html#t%3AEvent
 

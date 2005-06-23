@@ -58,10 +58,10 @@ handlePayload spool _ StartData =
        assert (p' == Nothing) $
        assert (h' == Nothing) $
        assert (c' == nullPtr) $
-       bracketOnError
+       Postmaster.Base.bracketOnError
          (openBinaryFile path WriteMode)
          (hClose)
-         (\h -> bracketOnError ctxCreate ctxDestroy $ \ctx -> do
+         (\h -> Postmaster.Base.bracketOnError ctxCreate ctxDestroy $ \ctx -> do
             hSetBuffering h NoBuffering
             when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
             md <- toMDEngine SHA1
