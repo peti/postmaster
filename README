@@ -41,7 +41,7 @@ What can it do?
 '''''''''''''''
 
   Postmaster implements an ESMTP server. Given a
-  configuration_, it starts up and listens for incoming SMTP
+  configuration, it starts up and listens for incoming SMTP
   connections, handles them, and pipes the accepted e-mail
   messages into an arbitrary local mailer of your choice. A
   good local mailer is Procmail_.
@@ -181,9 +181,7 @@ Copyleft
 
 .. _postmaster-2005-06-23.tar.gz: http://postmaster.cryp.to/postmaster-2005-06-23.tar.gz
 
-.. _known events: docs/Rfc2821.html#t%3AEvent
-
-.. _configuration: docs/Postmaster.html#2
+.. _known events: docs/Text.ParserCombinators.Parsec.Rfc2821.html#t%3AEvent
 
 .. _GHC: http://haskell.org/ghc/
 

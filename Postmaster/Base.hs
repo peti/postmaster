@@ -160,12 +160,40 @@ fallback f g = do
 -- "Control.Exception".
 
 bracketOnError
-        :: IO a         -- ^ computation to run first (\"acquire resource\")
-        -> (a -> IO b)  -- ^ computation to run last (\"release resource\")
-        -> (a -> IO c)  -- ^ computation to run in-between
-        -> IO c         -- returns the value from the in-between computation
-bracketOnError cons dest f =
-  block $ do
-    a <- cons
-    catch (unblock (f a))
-          (\e -> dest a >> throw e)
+	:: IO a		-- ^ computation to run first (\"acquire resource\")
+	-> (a -> IO b)  -- ^ computation to run last (\"release resource\")
+	-> (a -> IO c)	-- ^ computation to run in-between
+	-> IO c		-- returns the value from the in-between computation
+bracketOnError before after thing =
+  block (do
+    a <- before
+    catch
+	(unblock (thing a))
+	(\e -> do { after a; throw e })
+ )
+
+-- * Resource Management
+
+-- |Convert 'bracket'-style resource management to
+-- allocate\/free style. We need this, because we have to
+-- acquire resources that leave the scope in which they were
+-- allocated. Yeah, callback-driven I\/O does that to
+-- functional programs. Anyway, the resource will be /gone/
+-- once you empty the 'MVar' (or when it falls out of
+-- scope). So use only 'withMVar' and friends to access the
+-- value.
+
+acquire :: ((a -> IO b) -> IO b) -> IO (MVar a)
+acquire f = do
+  sync <- newEmptyMVar
+  let hold r = do putMVar sync r
+                  yield
+                  putMVar sync r
+                  return undefined
+  forkIO (f hold >> return ())
+  return sync
+
+-- |Let go of a resource allocated with 'acquire'.
+
+release :: MVar a -> IO ()
+release a = takeMVar a >> yield >> return ()

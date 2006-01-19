@@ -5,7 +5,7 @@
 GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -odir $(OBJDIR) -hidir $(OBJDIR)	\
-	    -O0 -Wall					\
+	    -O2 -funbox-strict-fields			\
 	    -iblockio	-ignore-package blockio		\
 	    -ichild	-ignore-package child		\
 	    -idns	-ignore-package hsdns 		\
@@ -20,8 +20,7 @@ HFLAGS	 := -threaded -odir $(OBJDIR) -hidir $(OBJDIR)	\
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
-HDI_PATH := http://localhost/ghc-current/ghc-6.5/html/libraries
-MYLIB    := http://localhost/homepage/
+HDI_PATH := http://haskell.org/ghc/docs/latest/html/libraries
 HDI_FILE := /usr/local/ghc-current/share/ghc-6.5/html/libraries
 HDIFILES := 							\
   -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock 		\
