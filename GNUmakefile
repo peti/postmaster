@@ -4,11 +4,11 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -odir $(OBJDIR) -hidir $(OBJDIR)	\
-	    -O2 -funbox-strict-fields			\
+HFLAGS	 := -threaded -O2 -funbox-strict-fields         \
+	    -odir $(OBJDIR) -hidir $(OBJDIR)		\
 	    -iblockio	-ignore-package blockio		\
 	    -ichild	-ignore-package child		\
-	    -idns	-ignore-package hsdns 		\
+	    -idns	-ignore-package hsdns		\
 		'-\#include <adns.h>'			\
 		'-\#include <sys/poll.h>'		\
 	    -iemail	-ignore-package hsemail		\
@@ -22,11 +22,11 @@ HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
 HDI_PATH := http://haskell.org/ghc/docs/latest/html/libraries
 HDI_FILE := /usr/local/ghc-current/share/ghc-6.5/html/libraries
-HDIFILES := 							\
-  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock 		\
-  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock 	\
-  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock 		\
-  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock 		\
+HDIFILES :=							\
+  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock		\
+  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock	\
+  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock		\
+  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock		\
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
 MONODIRS := blockio child dns email hopenssl monadenv syslog
@@ -155,3 +155,4 @@ init-src::	$(MONODIRS) $(SRCS)
 
 $(MONODIRS):
 	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.$@ co $@
+	@(cd $@ && ln -s ../.monotonerc MT/monotonerc)
