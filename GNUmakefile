@@ -4,8 +4,16 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O0 -Wall \
-	    -isyslog -odir $(OBJDIR) -hidir $(OBJDIR)
+HFLAGS	 := -threaded -odir $(OBJDIR) -hidir $(OBJDIR)	\
+	    -O0 -Wall					\
+	    -isyslog -ignore-package syslog		\
+	    -iblockio  -ignore-package blockio		\
+	    -imonadenv -ignore-package monadenv		\
+	    -ichild -ignore-package child		\
+	    -iemail -ignore-package hsemail		\
+	    -idns -ignore-package hsdns			\
+	    -ihopenssl -ignore-package hopenssl
+
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
@@ -24,7 +32,7 @@ HDIFILES := 							\
   -i $(MYLIB)/blockio/docs,$(HDI_FILE)/blockio/blockio.haddock	\
   -i $(MYLIB)/child/docs,$(HDI_FILE)/child/child.haddock
 
-MONODIRS := syslog
+MONODIRS := syslog monadenv blockio child email dns hopenssl
 
 ##### build postmaster binary
 
@@ -32,23 +40,36 @@ MONODIRS := syslog
 
     # TODO: Postmaster/Meta.hs is missing because
     # Haddock can't deal with it.
-SRCS := Postmaster.hs				\
-	Postmaster/Base.hs			\
-	Postmaster/FSM.hs			\
-	Postmaster/FSM/Announce.hs		\
-	Postmaster/FSM/DNSResolver.hs		\
-	Postmaster/FSM/DataHandler.hs		\
-	Postmaster/FSM/EhloPeer.hs		\
-	Postmaster/FSM/EventHandler.hs		\
-	Postmaster/FSM/HeloName.hs		\
-	Postmaster/FSM/MailFrom.hs		\
-	Postmaster/FSM/MailID.hs		\
-	Postmaster/FSM/PeerAddr.hs		\
-	Postmaster/FSM/PeerHelo.hs		\
-	Postmaster/FSM/SessionState.hs		\
-	Postmaster/FSM/Spooler.hs		\
-	Postmaster/IO.hs			\
-	Postmaster/Main.hs			\
+SRCS := Postmaster.hs					\
+	Postmaster/Base.hs				\
+	Postmaster/FSM.hs				\
+	Postmaster/FSM/Announce.hs			\
+	Postmaster/FSM/DNSResolver.hs			\
+	Postmaster/FSM/DataHandler.hs			\
+	Postmaster/FSM/EhloPeer.hs			\
+	Postmaster/FSM/EventHandler.hs			\
+	Postmaster/FSM/HeloName.hs			\
+	Postmaster/FSM/MailFrom.hs			\
+	Postmaster/FSM/MailID.hs			\
+	Postmaster/FSM/PeerAddr.hs			\
+	Postmaster/FSM/PeerHelo.hs			\
+	Postmaster/FSM/SessionState.hs			\
+	Postmaster/FSM/Spooler.hs			\
+	Postmaster/IO.hs				\
+	Postmaster/Main.hs				\
+	blockio/System/IO/Driver.hs			\
+	child/Control/Concurrent/Child.hs		\
+	child/Control/Timeout.hs			\
+	dns/Data/Endian.hs				\
+	dns/Network/DNS.hs				\
+	dns/Network/DNS/ADNS.hs				\
+	dns/Network/DNS/PollResolver.hs			\
+	dns/Network/IP/Address.hs			\
+	dns/System/Posix/GetTimeOfDay.hs		\
+	dns/System/Posix/Poll.hs			\
+	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
+	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
+	monadenv/Control/Monad/Env.hs			\
 	syslog/Syslog.hs
 
 all::	postmaster

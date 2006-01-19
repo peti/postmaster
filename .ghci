@@ -1,1 +1,8 @@
-:set -Wall -isyslog -hidir .objs -odir .objs
+:set -Wall -hidir .objs -odir .objs
+:set -isyslog -ignore-package syslog
+:set -iblockio  -ignore-package blockio
+:set -imonadenv -ignore-package monadenv
+:set -ichild -ignore-package child
+:set -iemail -ignore-package hsemail
+:set -idns -ignore-package hsdns
+:set -ihopenssl -ignore-package hopenssl
