@@ -25,12 +25,7 @@ HDIFILES := 							\
   -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock 	\
   -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock 		\
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock 		\
-  -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock	\
-  -i $(MYLIB)/hsemail/docs,$(HDI_FILE)/hsemail/hsemail.haddock	\
-  -i $(MYLIB)/hsdns/docs,$(HDI_FILE)/hsdns/hsdns.haddock		\
-  -i $(MYLIB)/monadenv/docs,$(HDI_FILE)/monadenv/monadenv.haddock	\
-  -i $(MYLIB)/blockio/docs,$(HDI_FILE)/blockio/blockio.haddock	\
-  -i $(MYLIB)/child/docs,$(HDI_FILE)/child/child.haddock
+  -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
 MONODIRS := syslog monadenv blockio child email dns hopenssl
 
@@ -69,6 +64,7 @@ SRCS := Postmaster.hs					\
 	dns/System/Posix/Poll.hs			\
 	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
 	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
+	hopenssl/OpenSSL/Digest.hs			\
 	monadenv/Control/Monad/Env.hs			\
 	syslog/Syslog.hs
 
