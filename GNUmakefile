@@ -6,13 +6,16 @@ GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -odir $(OBJDIR) -hidir $(OBJDIR)	\
 	    -O0 -Wall					\
-	    -isyslog -ignore-package syslog		\
-	    -iblockio  -ignore-package blockio		\
-	    -imonadenv -ignore-package monadenv		\
-	    -ichild -ignore-package child		\
-	    -iemail -ignore-package hsemail		\
-	    -idns -ignore-package hsdns			\
-	    -ihopenssl -ignore-package hopenssl
+	    -iblockio	-ignore-package blockio		\
+	    -ichild	-ignore-package child		\
+	    -idns	-ignore-package hsdns 		\
+		'-\#include <adns.h>'			\
+		'-\#include <sys/poll.h>'		\
+	    -iemail	-ignore-package hsemail		\
+	    -ihopenssl	-ignore-package hopenssl	\
+		'-\#include <openssl/evp.h>'		\
+	    -imonadenv	-ignore-package monadenv	\
+	    -isyslog	-ignore-package syslog		\
 
 DOCDIR	 := docs
 HADDOCK	 := haddock
@@ -27,7 +30,7 @@ HDIFILES := 							\
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock 		\
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := syslog monadenv blockio child email dns hopenssl
+MONODIRS := blockio child dns email hopenssl monadenv syslog
 
 ##### build postmaster binary
 
