@@ -18,11 +18,11 @@ HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
 HDI_PATH := http://haskell.org/ghc/docs/latest/html/libraries
 HDI_FILE := /usr/local/ghc-current/share/ghc-6.5/html/libraries
-HDIFILES := \
-  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock \
-  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock \
-  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock \
-  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock \
+HDIFILES := 							\
+  -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock 		\
+  -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock 	\
+  -i $(HDI_PATH)/mtl,$(HDI_FILE)/mtl/mtl.haddock 		\
+  -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock 		\
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
 MONODIRS := blockio child dns email hopenssl monadenv syslog
@@ -33,33 +33,33 @@ MONODIRS := blockio child dns email hopenssl monadenv syslog
 
     # TODO: Postmaster/Meta.hs is missing because
     # Haddock can't deal with it.
-SRCS := Postmaster.hs				\
-	Postmaster/Base.hs			\
-	Postmaster/FSM.hs			\
-	Postmaster/FSM/Announce.hs		\
-	Postmaster/FSM/DNSResolver.hs		\
-	Postmaster/FSM/DataHandler.hs		\
-	Postmaster/FSM/EhloPeer.hs		\
-	Postmaster/FSM/EventHandler.hs		\
-	Postmaster/FSM/HeloName.hs		\
-	Postmaster/FSM/MailFrom.hs		\
-	Postmaster/FSM/MailID.hs		\
-	Postmaster/FSM/PeerAddr.hs		\
-	Postmaster/FSM/PeerHelo.hs		\
-	Postmaster/FSM/SessionState.hs		\
-	Postmaster/FSM/Spooler.hs		\
-	Postmaster/IO.hs			\
-	Postmaster/Main.hs			\
-	blockio/System/IO/Driver.hs		\
-	child/Control/Concurrent/Child.hs	\
-	child/Control/Timeout.hs		\
-	dns/Data/Endian.hs			\
-	dns/Network/DNS.hs			\
-	dns/Network/DNS/ADNS.hs			\
-	dns/Network/DNS/PollResolver.hs		\
-	dns/Network/IP/Address.hs		\
-	dns/System/Posix/GetTimeOfDay.hs	\
-	dns/System/Posix/Poll.hs		\
+SRCS := Postmaster.hs					\
+	Postmaster/Base.hs				\
+	Postmaster/FSM.hs				\
+	Postmaster/FSM/Announce.hs			\
+	Postmaster/FSM/DNSResolver.hs			\
+	Postmaster/FSM/DataHandler.hs			\
+	Postmaster/FSM/EhloPeer.hs			\
+	Postmaster/FSM/EventHandler.hs			\
+	Postmaster/FSM/HeloName.hs			\
+	Postmaster/FSM/MailFrom.hs			\
+	Postmaster/FSM/MailID.hs			\
+	Postmaster/FSM/PeerAddr.hs			\
+	Postmaster/FSM/PeerHelo.hs			\
+	Postmaster/FSM/SessionState.hs			\
+	Postmaster/FSM/Spooler.hs			\
+	Postmaster/IO.hs				\
+	Postmaster/Main.hs				\
+	blockio/System/IO/Driver.hs			\
+	child/Control/Concurrent/Child.hs		\
+	child/Control/Timeout.hs			\
+	dns/Data/Endian.hs				\
+	dns/Network/DNS.hs				\
+	dns/Network/DNS/ADNS.hs				\
+	dns/Network/DNS/PollResolver.hs			\
+	dns/Network/IP/Address.hs			\
+	dns/System/Posix/GetTimeOfDay.hs		\
+	dns/System/Posix/Poll.hs			\
 	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
 	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
 	hopenssl/OpenSSL/Digest.hs			\
