@@ -1,0 +1,15 @@
+^NOTES$
+^TAGS$
+^\.objs(/|$)
+^_darcs(/|$)
+^blockio(/|$)
+^child(/|$)
+^dns(/|$)
+^docs(/|$)
+^email(/|$)
+^hopenssl(/|$)
+^index.html$
+^monadenv(/|$)
+^postmaster$
+^postmaster-.*\.tar\.gz
+^syslog(/|$)
