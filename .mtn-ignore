@@ -13,3 +13,4 @@
 ^postmaster$
 ^postmaster-.*\.tar\.gz
 ^syslog(/|$)
+^notfound.html$
