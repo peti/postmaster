@@ -1,7 +1,7 @@
 Postmaster ESMTP Server
 =======================
 
-:Latest Release: postmaster-2005-06-23.tar.gz_
+:Latest Release: postmaster-2007-02-02.tar.gz_
 :Darcs:          darcs_ get http://postmaster.cryp.to/ postmaster
 
 .. contents::
@@ -179,7 +179,7 @@ Copyleft
 
 .. _Sendmail: http://sendmail.org/
 
-.. _postmaster-2005-06-23.tar.gz: http://postmaster.cryp.to/postmaster-2005-06-23.tar.gz
+.. _postmaster-2007-02-02.tar.gz: http://postmaster.cryp.to/postmaster-2007-02-02.tar.gz
 
 .. _known events: docs/Rfc2821.html#t%3AEvent
 

@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.EventHandler
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -13,7 +13,6 @@ module Postmaster.FSM.EventHandler where
 
 import Data.Typeable
 import Postmaster.Base
-import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
 newtype EH = EH EventHandler

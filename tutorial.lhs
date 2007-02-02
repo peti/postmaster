@@ -129,7 +129,7 @@ described above.
 The implementation is trivial::
 
 > localHosts :: [HostName] -> EventT
-> localHosts lhosts f e@(AddRcptTo (Mailbox _ _ host)) = do
+> localHosts lhosts _ (AddRcptTo (Mailbox _ _ host)) = do
 >   if (map toLower host) `elem` lhosts
 >      then say 2 5 0 "TODO: We accept everything right now"
 >      else say 5 5 3 "unknown recipient"

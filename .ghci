@@ -1,8 +1,5 @@
 :set -Wall -hidir .objs -odir .objs
-:set -iblockio  -ignore-package blockio
-:set -ichild -ignore-package child
 :set -idns -ignore-package hsdns
 :set -iemail -ignore-package hsemail
 :set -ihopenssl -ignore-package hopenssl
-:set -imonadenv -ignore-package monadenv
 :set -isyslog -ignore-package syslog

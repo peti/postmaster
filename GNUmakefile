@@ -6,22 +6,19 @@ GHC	 := ghc
 OBJDIR	 := .objs
 HFLAGS	 := -threaded -O0 -Wall				\
 	    -odir $(OBJDIR) -hidir $(OBJDIR)		\
-	    -iblockio	-ignore-package blockio		\
-	    -ichild	-ignore-package child		\
 	    -idns	-ignore-package hsdns		\
 		'-\#include <adns.h>'			\
 		'-\#include <sys/poll.h>'		\
 	    -iemail	-ignore-package hsemail		\
 	    -ihopenssl	-ignore-package hopenssl	\
 		'-\#include <openssl/evp.h>'		\
-	    -imonadenv	-ignore-package monadenv	\
 	    -isyslog	-ignore-package syslog		\
 
 DOCDIR	 := docs
 HADDOCK	 := haddock
 HSC2HS	 := hsc2hs
-HDI_PATH := http://localhost/ghc-current/ghc-6.5/html/libraries
-HDI_FILE := /usr/local/ghc-current/share/ghc-6.5/html/libraries
+HDI_PATH := http://localhost/ghc-current/ghc-6.7/html/libraries
+HDI_FILE := /usr/local/ghc-current/share/ghc-6.7/html/libraries
 HDIFILES :=							\
   -i $(HDI_PATH)/base,$(HDI_FILE)/base/base.haddock		\
   -i $(HDI_PATH)/network,$(HDI_FILE)/network/network.haddock	\
@@ -29,7 +26,7 @@ HDIFILES :=							\
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock		\
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := blockio child dns email hopenssl monadenv syslog
+MONODIRS := dns email hopenssl syslog
 
 ##### build postmaster binary
 
@@ -54,9 +51,6 @@ SRCS := Postmaster.hs					\
 	Postmaster/FSM/Spooler.hs			\
 	Postmaster/IO.hs				\
 	Postmaster/Main.hs				\
-	blockio/System/IO/Driver.hs			\
-	child/Control/Concurrent/Child.hs		\
-	child/Control/Timeout.hs			\
 	dns/Data/Endian.hs				\
 	dns/Network/DNS.hs				\
 	dns/Network/DNS/ADNS.hs				\
@@ -67,7 +61,6 @@ SRCS := Postmaster.hs					\
 	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
 	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
 	hopenssl/OpenSSL/Digest.hs			\
-	monadenv/Control/Monad/Env.hs			\
 	syslog/Syslog.hs
 
 all::	postmaster
@@ -91,7 +84,7 @@ docs::		$(DOCDIR)/tutorial.html
 $(DOCDIR)/index.html:	$(SRCS)
 	@echo "Build documentation ..."
 	@if [ ! -d $(DOCDIR) ]; then mkdir $(DOCDIR); fi
-	@$(HADDOCK) $(HDIFILES) -s .. -t Postmaster -h \
+	@$(HADDOCK) $(HDIFILES) -s ../%F -t Postmaster -h \
 		-o $(DOCDIR) $(SRCS)
 
 $(DOCDIR)/tutorial.html:	tutorial.lhs

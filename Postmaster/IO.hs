@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.IO
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -11,20 +11,158 @@
 
 module Postmaster.IO where
 
-import Prelude hiding ( catch )
+import Data.List
 import Data.Maybe
-import Data.Typeable
-import Control.Concurrent ( forkIO )
+import Data.Dynamic             ( Typeable, fromDynamic )
+import Data.Unique              ( Unique, newUnique )
+import Control.Concurrent       ( forkIO, threadDelay, myThreadId, killThread )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
 import System.IO
-import Network ( listenOn, PortID(..) )
+import System.IO.Error
+import Network                  ( listenOn, PortID(..) )
 import Network.Socket
-import Postmaster.Base
 import Text.ParserCombinators.Parsec.Rfc2821
-import System.IO.Driver
-import Control.Timeout
-import Control.Monad.Env
+import Foreign
+import Postmaster.Base
+
+-- * Static Buffer I\/O
+
+type ReadHandle  = Handle
+type WriteHandle = Handle
+
+-- |Run the given computation with an initialized, empty
+-- 'Buffer'. The buffer is gone when the computation
+-- returns.
+
+withBuffer :: Capacity -> (Buffer -> IO a) -> IO a
+withBuffer 0 = fail "BlockIO.withBuffer with size 0 doesn't make sense"
+withBuffer n = bracket cons dest
+  where
+  cons = mallocArray (fromIntegral n) >>= \p -> return (Buf n p 0)
+  dest = \(Buf _ p _) -> free p
+
+-- |Drop the first @n <= size@ octets from the buffer.
+
+flush :: ByteCount -> Buffer -> IO Buffer
+flush 0 buf               = return buf
+flush n (Buf cap ptr len) = assert (n <= len) $ do
+  let ptr' = ptr `plusPtr` (fromIntegral n)
+      len' = (fromIntegral len) - (fromIntegral n)
+  when (len' > 0) (copyArray ptr ptr' len')
+  return (Buf cap ptr (fromIntegral len'))
+
+type Timeout = Int
+
+-- |If there is space, read and append more octets; then
+-- return the modified buffer. In case of 'hIsEOF',
+-- 'Nothing' is returned. If the buffer is full already,
+-- 'throwDyn' a 'BufferOverflow' exception. When the timeout
+-- exceeds, 'ReadTimeout' is thrown.
+
+slurp :: Timeout -> ReadHandle -> Buffer -> IO (Maybe Buffer)
+slurp to h b@(Buf cap ptr len) = do
+  when (cap <= len) (throwDyn (BufferOverflow h b))
+  timeout to (handleEOF wrap) >>=
+    maybe (throwDyn (ReadTimeout to h b)) return
+  where
+  wrap = do let ptr' = ptr `plusPtr` (fromIntegral len)
+                n    = cap - len
+            rc <- hGetBufNonBlocking h ptr' (fromIntegral n)
+            if rc > 0
+               then return (Buf cap ptr (len + (fromIntegral rc)))
+               else hWaitForInput h (-1) >> wrap
+
+-- * BlockHandler and I\/O Driver
+
+-- |A callback function suitable for use with 'runLoop'
+-- takes a buffer and a state, then returns a modified
+-- buffer and a modified state. Usually the callback will
+-- use 'slurp' to remove data it has processed already.
+
+type BlockHandler st = Buffer -> st -> IO (Buffer, st)
+
+-- |Our main I\/O driver.
+
+runLoopNB
+  :: (st -> Timeout)            -- ^ user state provides timeout
+  -> (Exception -> st -> IO st) -- ^ user provides I\/O error handler
+  -> ReadHandle                 -- ^ the input source
+  -> Capacity                   -- ^ I\/O buffer size
+  -> BlockHandler st            -- ^ callback
+  -> st                         -- ^ initial callback state
+  -> IO st                      -- ^ return final callback state
+runLoopNB mkTO errH hIn cap f initST = withBuffer cap (flip ioloop $ initST)
+  where
+  ioloop buf st = buf `seq` st `seq`
+    handle (\e -> errH e st) $ do
+      rc <- slurp (mkTO st) hIn buf
+      case rc of
+        Nothing   -> return st
+        Just buf' -> f buf' st >>= uncurry ioloop
+
+-- |A variant which won't time out and will just 'throw' all
+-- exceptions.
+
+runLoop :: ReadHandle -> Capacity -> BlockHandler st -> st -> IO st
+runLoop = runLoopNB (const (-1)) (\e _ -> throw e)
+
+-- * Handler Combinators
+
+-- |Signal how many bytes have been consumed from the
+-- /front/ of the list; these octets will be dropped.
+
+type StreamHandler st = [Word8] -> st -> IO (ByteCount, st)
+
+handleStream :: StreamHandler st -> BlockHandler st
+handleStream f buf@(Buf _ ptr len) st = do
+  (i, st') <- peekArray (fromIntegral len) ptr >>= (flip f) st
+  buf' <- flush i buf
+  return (buf', st')
+
+-- * I\/O Exceptions
+
+-- |Thrown by 'slurp'.
+
+data BufferOverflow = BufferOverflow ReadHandle Buffer
+                    deriving (Show, Typeable)
+
+-- |Thrown by 'slurp'.
+
+data ReadTimeout    = ReadTimeout Timeout ReadHandle Buffer
+                    deriving (Show, Typeable)
+
+
+-- * Internal Helper Functions
+
+-- |Return 'Nothing' if the given computation throws an
+-- 'isEOFError' exception. Used by 'slurp'.
+
+handleEOF :: IO a -> IO (Maybe a)
+handleEOF f =
+  catchJust ioErrors
+    (fmap Just f)
+    (\e -> if isEOFError e then return Nothing else ioError e)
+
+-- |Our version of C's @strstr(3)@.
+
+strstr :: [Word8] -> [Word8] -> Maybe Int
+strstr tok = strstr' 0
+  where
+  strstr'  _     []       = Nothing
+  strstr' pos ls@(_:xs)
+    | tok `isPrefixOf` ls = Just (pos + length tok)
+    | otherwise           = strstr' (pos + 1) xs
+
+-- |Split a list by some delimiter. Will soon be provided by
+-- "Data.List".
+
+splitList :: Eq a => [a] -> [a] -> [[a]]
+splitList d' l' =
+  unfoldr (\x -> if (null x) then Nothing else Just $ nextToken d' [] (snd $ splitAt (length d') x)) (d'++l')
+  where nextToken _ r [] = (r, [])
+        nextToken d r l@(h:t) | (d `isPrefixOf` l) = (r, l)
+                              | otherwise = nextToken d (r++[h]) t
 
 -- * Socket Handlers
 
@@ -88,3 +226,30 @@ safeReply hOut r = safeWrite (hPutStr hOut (show r))
 
 safeFlush :: WriteHandle -> Smtpd ()
 safeFlush hOut = safeWrite (hFlush hOut)
+
+
+-- * Timeout
+
+-- An internal type that is thrown as a dynamic exception to interrupt the
+-- running IO computation when the timeout has expired.
+
+data TimeoutEvent = TimeoutEvent Unique deriving (Eq, Typeable)
+
+-- |Wrap an 'IO' computation to time out and return @Nothing@ if it hasn't
+-- succeeded after @n@ microseconds. If the computation finishes before the
+-- timeout expires, @Just a@ is returned. Timeouts are specified in microseconds
+-- (@1\/10^6@ seconds). Negative values mean \"wait indefinitely\". When
+-- specifying long timeouts, be careful not to exceed @maxBound :: Int@.
+
+timeout :: Int -> IO a -> IO (Maybe a)
+timeout n f
+    | n <  0    = fmap Just f
+    | n == 0    = return Nothing
+    | otherwise = do
+        pid <- myThreadId
+        ex  <- fmap TimeoutEvent newUnique
+        handleJust (\e -> dynExceptions e >>= fromDynamic >>= guard . (ex ==))
+                   (\_ -> return Nothing)
+                   (bracket (forkIO (threadDelay n >> throwDynTo pid ex))
+                            (killThread)
+                            (\_ -> fmap Just f))
