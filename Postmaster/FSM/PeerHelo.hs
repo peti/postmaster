@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.FSM.PeerHelo
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -13,7 +13,6 @@ module Postmaster.FSM.PeerHelo where
 import Control.Monad
 import Network ( HostName )
 import Postmaster.Base
-import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821
 
 -- |Local Variable: @PEERHELO :: 'HostName'@

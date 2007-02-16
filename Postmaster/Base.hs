@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.Base
-   Copyright   :  (c) 2005-06-23 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -9,7 +9,11 @@
    Portability :  Haskell 2-pre
  -}
 
-module Postmaster.Base where
+module Postmaster.Base
+  ( module Postmaster.Base
+  , module Postmaster.Env
+  )
+  where
 
 import Prelude hiding ( catch )
 import Foreign
@@ -17,11 +21,10 @@ import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
-import Control.Monad.Env
 import Control.Concurrent
-import System.IO.Driver
 import Data.Typeable
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
+import Postmaster.Env
 
 -- * The @Smtpd@ Monad
 
@@ -99,6 +102,11 @@ type EventHandler = Event -> Smtpd SmtpReply
 type EventT  = EventHandler -> EventHandler
 
 -- ** Data Handler
+
+type ByteCount = Word16
+type Capacity  = Word16
+data Buffer    = Buf !Capacity !(Ptr Word8) !ByteCount
+                 deriving (Eq, Show, Typeable)
 
 type DataHandler = Buffer -> Smtpd (Maybe SmtpReply, Buffer)
 

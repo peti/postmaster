@@ -14,7 +14,6 @@
 module Postmaster.Meta where
 
 import Language.Haskell.TH hiding ( global )
-import Control.Monad.Env
 import Postmaster.Base
 
 mkBody :: ExpQ -> [ClauseQ]

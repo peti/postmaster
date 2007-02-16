@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.Spooler
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -18,13 +18,12 @@ import Control.Monad.RWS hiding ( local )
 import System.Directory
 import System.IO
 import Postmaster.Base
+import Postmaster.IO
 import Postmaster.FSM.EventHandler
 import Postmaster.FSM.SessionState
 import Postmaster.FSM.DataHandler
 import Postmaster.FSM.MailID
-import Control.Monad.Env
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
-import System.IO.Driver
 import OpenSSL.Digest
 import Data.Typeable
 

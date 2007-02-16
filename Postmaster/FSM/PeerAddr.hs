@@ -1,6 +1,6 @@
 {- |
    Module      :  Postmaster.FSM.PeerAddr
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -12,7 +12,6 @@ module Postmaster.FSM.PeerAddr where
 
 import Postmaster.Base
 import Network.Socket ( SockAddr )
-import Control.Monad.Env
 
 peerAddr :: Variable
 peerAddr = mkVar "peeradr"

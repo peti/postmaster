@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.DNSResolver
-   Copyright   :  (c) 2005-02-13 by Peter Simons
+   Copyright   :  (c) 2007-02-02 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
@@ -15,7 +15,6 @@ import Control.Monad.RWS hiding ( local )
 import Network.DNS
 import Data.Typeable
 import Postmaster.Base
-import Control.Monad.Env
 
 newtype DNSR = DNSR Resolver
              deriving (Typeable)
