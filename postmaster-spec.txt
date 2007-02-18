@@ -1,0 +1,137 @@
+                 Postmaster Design Specification
+
+Who needs this software?
+
+  The primary target audience are small to middle-sized mail
+  exchangers, the kind of installation a local-area ISP or an
+  individual Internet enthusiast would have. Postmaster has to be
+  powerful enough to deal with complex setups, naturally, but the
+  world does not need another Sendmail. What it needs is an
+  RFC-compliant Mail Transport Agent that is somewhat bug-free
+  and very simple to setup and configure. Ideally, the average
+  Unix system administrator should be able to go from a
+  downloaded release archive to a running installation in 3 or 4
+  steps at most.
+
+  The design strategy chosen to achieve that result is that
+  simple setups should be simple, and complex setups should be
+  possible.
+
+
+What does Postmaster do?
+
+  The individual components are an SMTP daemon, an SMTP client,
+  and a spool manager. The spool manager receives e-mail from the
+  daemon and dispatches it to an external local mailer. In case
+  of relaying, this local mailer could be the Postmaster SMTP
+  client, but it might also be procmail, mailx, Petidomo, or any
+  other suitable e-mail back-end. Postmaster's configuration is
+  essentially a routing table that maps an e-mail address to a
+  local mailer.
+
+  As far as the daemon is concerned, it speaks ESMTP with
+  PIPELINING, 8BITMIME, and STARTTLS extensions. Commands the
+  daemon does not support are HELP, TURN, SEND, SOML, SAML, and
+  EXPN. VRFY is a tough question, see below.
+
+  An additional component that would be quite nice to have is a
+  web-based configuration manager, particularly one that can
+  manage the spool directory and query wild run-time statistics
+  from the daemon too.
+
+
+What about spam?
+
+  In theory, the set of configured addresses is the set of
+  addresses the daemon accepts, but for spam protection it is
+  necessary to build some sort of authentication callback into
+  Postmaster -- a simple function that can reject incoming e-mail
+  in the SMTP dialogue although it has a valid envelope and
+  recipient. It might be nice to have a DSO interface to these
+  kind of callbacks.
+
+  Native SPF support in daemon via <http://www.libspf2.org/>.
+
+  More sophisticated spam recognition is beyond the package's
+  scope and belongs into the realm of local mailers.
+
+
+What does the configuration file look like:
+
+  It's typically found at /etc/postmaster.cf and looks a bit like
+  sendmail's virtusertable:
+
+  | // deliver to local mailbox using the default local mailer
+  | joe.doe@example.org         joe
+  |
+  | // rewrite recipient address
+  | joe.dow@example.org         jane.dow@example.org
+  |
+  | // if any target address fails, the entire RCPT TO fails
+  | dow.joe@example.org         joe@example.net, joe@example.com
+  |
+  | // define domain name aliases
+  | @example.com                @example.net
+  |
+  | // exact matches take precedence over the default match above
+  | joe@example.com             joe.doe@example.com
+  |
+  | // do what sendmail does for members of /etc/passwd
+  | info@                       propaganda@example.net
+
+  Postmaster extends virtusertable's semantics by local mailer
+  targets that are specified in a syntax similar to function
+  calls:
+
+  | // configure relaying
+  | @acme.example.com           relay(10.0.0.1:587)
+  |
+  | // configure several smart hosts (in order of preference)
+  | @                           relay(isp.example.net, 10.33.0.1)
+  |
+  | // we don't need no "..."-quoting of the argument
+  | abuse@acme.example.com      pipe(/usr/bin/cat >/dev/null)
+
+
+
+
+Should Postmaster support VRFY?
+
+  The usefulness of the VRFY command in spam protection is hard
+  to judge. From an SMTP server's perspective, it would be nice
+  if an incoming RCPT TO could be validated on the spot in case
+  the transaction leads to relaying. If the target MX says "no"
+  to this address, it can be reject here too. This makes VRFY a
+  useful command.
+
+  On the other hand, there have been claims that spammers might
+  abuse that command to validate their address lists. That point
+  feels minor. It is not obvious why it might be an advantage if
+  spammers send out millions of bogus RCPT TOs instead.
+  Apparently that is supposed to slow them down? People have
+  built entire anti-spam software around the notion of slowing
+  spammers down (like honey traps, Teergruben, etc.), but it
+  doesn't seem to work too well in practice, does it?
+
+  When asked, sendmail says about VRFY:
+
+  | 252 2.5.2 Cannot VRFY user; try RCPT to attempt delivery (or try finger)
+
+  It sounds stupid -- and it is! -- but there is some truth in
+  it. When relaying, it might be even better to open a real
+  transaction on the spot, and to get that remote MX to confirm
+  an RCPT TO before confirming our own RCPT TO to the client.
+
+  One disadvantage of implementing VRFY is that it would have to
+  be considered bad practice to say "yes" to a VRFY, but "no" to
+  an RCPT TO for the same address later. That is bound to happen,
+  however, because an address might in principle pass VRFY, but
+  fail RCPT TO because of the prior MAIL FROM (which VRFY can't
+  know).
+
+  A good interpretation could be that VRFY may produce false
+  positives but no false negatives. A reject is binding, but
+  acceptance doesn't guarantee that the mail transaction itself
+  will actually succeed.
+
+  The best way to put it probably is that VRFY is redundant.

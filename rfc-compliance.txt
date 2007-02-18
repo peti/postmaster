@@ -1,0 +1,174 @@
+                       ESMTP related RFCs
+                       ------------------
+
+RFC 2821: Simple Mail Transfer Protocol
+
+  The bible.
+
+RFC 1428: Transition of Internet Mail from Just-Send-8 to 8bit-SMTP/MIME
+
+  Mail servers are supposed to upgrade 8-bit messages without
+  MIME information to an "unknown-8bit"-encoded MIME message.
+
+RFC 1652: SMTP Service Extension for 8bit-MIMEtransport
+
+  The ESMTP 8BITMIME extension adds the parameter
+  "BODY={7BIT,8BITMIME}" to the MAIL FROM command. Supporting
+  this extension basically means promising that you can handle
+  8-bit contents. Relaying a message that's declared 8BITMIME to
+  an MX that doesn't support this requires the MTA to downgrade
+  the transfer encoding to base64 or quoted-printable.
+
+RFC 1845: SMTP Service Extension for Checkpoint/Restart
+
+  The ESMTP CHECKPOINT extension allows the client to specify a
+  transaction identifier at MAIL FROM. If the connection aborts
+  before DATA is finished, an attempt to deliver a message with
+  that very same id will cause the server to respond with the
+  number of bytes he has received (and stored) earlier. Thus, the
+  client doesn't have to re-transmit them.
+
+RFC 1846: SMTP 521 Reply Code
+
+  A mail relay may respond "521 <domain> does not accept mail" to
+  a given RCPT TO if the host in question does not accept mail.
+  Hosts may also use 521 as the initial greeting to signify that
+  they don't accept mail.
+
+RFC 1870: SMTP Service Extension for Message Size Declaration
+
+  The ESMTP SIZE extension add the parameter "SIZE=n" to MAIL
+  FROM, which allows the server to reject the message if it is
+  too large. The declared size isn't necessarily accurate, the
+  RFC calls that number "the client's estimate". The actual
+  payload size is known only after <CRLF><DOT><CRLF>.
+
+RFC 1985: SMTP Service Extension for Remote Message Queue Starting
+
+  Defines the ETRN command to trigger queue processing on the
+  remote server.
+
+RFC 2034: SMTP Service Extension for Returning Enhanced Error Codes
+
+  The ESMTP ENHANCEDSTATUSCODES extension allows MTAs to add lots
+  of unnecessary baggage to the SMTP dialogue.
+
+RFC 2505: Anti-Spam Recommendations for SMTP MTAs
+
+  MTAs are supposed to verify MAIL FROM addresses using DNS and
+  other means (2.9 and 2.10).
+
+RFC 2554: SMTP Service Extension for Authentication
+
+  The ESMTP AUTH extension specifies a challenge/response
+  dialogue that's supposed to authenticate the client to the
+  server. Probably unnecessary if STARTTLS is available.
+
+RFC 2645: On-Demand Mail Relay (ODMR) SMTP with Dynamic IP Addresses
+
+  Defines the ATRN command, which does the same thing as TURN
+  only it requires AUTH authentication to be performed before it
+  can be issued.
+
+RFC 2852: Deliver By SMTP Service Extension
+
+  The ESMTP DELIVERBY extension allows clients to specify that
+  the payload should be delivered within the specified time
+  period and what should be done if that isn't possible.
+
+RFC 2920: SMTP Service Extension for Command Pipelining
+
+  The ESMTP PIPELINING extension allows MTAs to declare that
+  sending more than one command at a time will not break their
+  buffering.
+
+RFC 3030: SMTP Service Extensions for Transmission of Large and Binary MIME Messages
+
+  This mechanism allows 8-bit MIME payload payload without
+  transfer encoding.
+
+  The ESMTP CHUNKING extension adds BDAT as an alternative to
+  DATA. The BDAT command has one parameter: the size of the
+  payload chunk that follows it. Additionally, the parameter LAST
+  signifies that this chunk concludes the transaction. The last
+  chunk may have size 0. Multiple BDAT chunks may be pipelined,
+  because server must confirm intermediate chunks with 250,
+  nothing else.
+
+  ESMTP BINARYMIME combines the CHUNKING and 8BITMIME extensions
+  by adding BODY=BINARYMIME to MAIL FROM. When specified, the
+  transaction must occur with BDATA, not DATA.
+
+RFC 3207: SMTP Service Extension for Secure SMTP over Transport Layer Security
+
+  The ESMTP STARTTLS extension defines the STARTTLS command,
+  which triggers a TLS handshake. The SMTP session starts over
+  with EHLO afterwards.
+
+RFC 3461: SMTP Service Extension for Delivery Status Notifications (DSNs)
+
+  The ESMTP DSN extension provides means for the client to
+  specify reporting and tracing behavior of a message's relays
+  and final server. RCPT TO get an additional NOTIFY and ORCPT
+  parameters, MAIL FROM gets additional RET and ENVID parameters.
+  There are lots of other insane additions.
+
+RFC 3865: A No Soliciting SMTP Service Extension
+
+  The ESMTP NO-SOLICITING extension allows payload to be
+  classified before transfer. The client adds
+  "SOLICIT=type1:type2:...:typen" to MAIL FROM to allow the
+  server to reject the message based on that classification.
+  "spam" is an obvious category, but the RFC doesn't define
+  anything, instead the RFC2822 extension header "Solicitation:"
+  can be used to signal these categories during injection.
+
+RFC 3885: SMTP Service Extension for Message Tracking
+
+  The ESMTP MTRK extension adds support for message tracking
+  (apparently using hash MAC algorithms). It requires that most
+  of ESMTP DSN and DELIVERBY is implemented, so it can't be very
+  useful.
+
+RFC 4405: SMTP Service Extension for Indicating the Responsible Submitter of an E-Mail Message
+
+  The SMTP SUBMITTER extensions lifts the "purported responsible
+  address" from the RFC2822 payload into the SMTP dialogue. Thus,
+  a mail server can reject the transaction based on this
+  information prior to accepting DATA. The MTA who receives the
+  initial injection, for example, could enforce SPF records here.
+
+RFC 4141: SMTP and MIME Extensions for Content Conversion
+
+  E-mail relays can use the ESMTP CONNEG extension to ask the
+  recipient MX whether it is okay to re-encode the payload before
+  relaying. Meaning, re-encoding content, not just transport
+  encoding. A relaying mail server could, for instance, re-encode
+  an attached WAV audio file to MP3 before delivering the e-mail.
+  If the recipient MX is okay with that, that is. This extension
+  is supposed to conserve bandwidth.
+
+                            Auxiliary
+                            ---------
+
+RFC 1893: Enhanced Mail System Status Codes
+
+  Necessary for ESMTP DSN and ESMTP ENHANCEDSTATUSCODES.
+
+RFC 2047: MIME Part Three: Message Header Extensions for Non-ASCII Text
+
+  Might be necessary during injection or even relaying.
+
+RFC 2442: The Batch SMTP Media Type
+
+  Defines a MIME type for batched SMTP transactions.
+
+RFC 2033: Local Mail Transfer Protocol
+
+  LMTP is a variation of ESMTP that starts with LHLO instead
+  EHLO. It's identical to ESMTP but one exception: the response
+  to DATA has one line per successful RCPT TO -- every recipient
+  gets a separate response code. This addition allows the server
+  to operate without a mail spool. LMTP must not be accepted on
+  port 25 and the server must support ESMTP PIPELINING and
+  ESMTP ENHANCEDSTATUSCODES.
