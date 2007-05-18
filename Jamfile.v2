@@ -3,9 +3,8 @@
 exe postmaster
     : main.cpp
     : <use>/boost
-      <use>/boost/log    <library>/boost/log//boost_log
-      <use>/boost/test   <library>/boost/test//boost_prg_exec_monitor
-      <use>/boost/thread <library>/boost/thread//boost_thread
-      <use>/boost/system <library>/boost/system//boost_system
-    : <threading>multi
+      <use>/boost/program_options <library>/boost/program_options//boost_program_options
+      <use>/boost/test            <library>/boost/test//boost_prg_exec_monitor
+      <use>/boost/system          <library>/boost/system//boost_system
+    : <threading>single
     ;
