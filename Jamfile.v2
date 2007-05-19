@@ -20,4 +20,5 @@ test-suite postmaster_tests
   : [ run test-address-parser.cpp               /boost//unit_test_framework ]
     [ run test-route-parser.cpp pm_routing      /boost//unit_test_framework ]
     [ run test-pattern-matching.cpp pm_routing  /boost//unit_test_framework ]
+    [ run test-nocase-string.cpp                /boost//unit_test_framework ]
   ;
