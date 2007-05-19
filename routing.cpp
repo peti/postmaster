@@ -59,7 +59,7 @@ struct address_parser : public spirit::grammar<address_parser, address_closure::
 
 address_parser const  address_p;
 
-struct test_case
+struct address_test_case
 {
   char const * input;
   char const * user;
@@ -71,21 +71,21 @@ BOOST_AUTO_TEST_CASE( test_rfc2821_address_parser )
   using namespace std;
   using namespace phoenix;
 
-  test_case const suite[] =
+  address_test_case const suite[] =
     { { "foo .\tbar @ example\t \t.net ",       "foo.bar",   "example.net" }
-    , { "\"\"@example . org",                   "\"\"",      "example.org" }
-    , { "\"\\\"\"@[127.0.0.1]",                 "\"\\\"\"",  "[127.0.0.1]" }
+    , { " \"\"@example . org",                  "\"\"",      "example.org" }
+    , { " \"\\\"\"@[127.0.0.1] ",               "\"\\\"\"",  "[127.0.0.1]" }
     };
 
-  BOOST_FOREACH( test_case const & c, suite )
+  BOOST_FOREACH( address_test_case const & c, suite )
   {
     cout << "parse '" << c.input << "' ... ";
-    address addr;
+    address addr("<invalid>", "<invalid>");
     spirit::parse_info<> const r( parse(c.input, address_p [var(addr) = arg1], wsp_p) );
-    BOOST_REQUIRE(r.hit);
-    BOOST_REQUIRE_EQUAL(addr.first,  c.user);
-    BOOST_REQUIRE_EQUAL(addr.second, c.host);
     cout << addr.first << " @ " << addr.second << std::endl;
+    BOOST_CHECK(r.hit);
+    BOOST_CHECK_EQUAL(addr.first,  c.user);
+    BOOST_CHECK_EQUAL(addr.second, c.host);
   }
 }
 
@@ -114,16 +114,17 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
       using namespace phoenix;
 
       top =
-        ( stmt =  lhs >> +wsp_p >> rhs >> !cr_p >> lf_p
+        ( stmt =  lhs >> +wsp_p >> rhs
 
-        , lhs  =  (  address_p             [bind(&route::first)(self.val) = arg1]
-                  |  local_part_p          [bind(&address::first)(bind(&route::first)(self.val)) = arg1] >> "@"
-                  |  ch_p('@') >> domain_p [bind(&address::second)(bind(&route::first)(self.val)) = arg1]
+        , lhs  =  (  ch_p('@') >> domain_p [bind(&address::second)(bind(&route::first)(self.val)) = arg1]
+                  |  address_p             [bind(&route::first)(self.val) = arg1]
+                  |  local_part_p          [bind(&address::first)(bind(&route::first)(self.val)) = arg1] >> !ch_p('@')
+                  |  ch_p('@')
                   )
 
-        , rhs  =  (  address_p             [bind(&route::second)(self.val) = arg1]
-                  |  local_part_p          [bind(&address::first)(bind(&route::second)(self.val)) = arg1] >> "@"
-                  |  ch_p('@') >> domain_p [bind(&address::second)(bind(&route::second)(self.val)) = arg1]
+        , rhs  =  (  ch_p('@') >> domain_p [bind(&address::second)(bind(&route::second)(self.val)) = arg1]
+                  |  address_p             [bind(&route::second)(self.val) = arg1]
+                  |  local_part_p          [bind(&address::first)(bind(&route::second)(self.val)) = arg1] >> !ch_p('@')
                   )
         );
     }
@@ -134,29 +135,55 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
 
 route_parser const  route_p;
 
+struct route_test_case
+{
+  char const * input;
+  char const * lhs_user;
+  char const * lhs_host;
+  char const * rhs_user;
+  char const * rhs_host;
+};
+
 BOOST_AUTO_TEST_CASE( test_config_parser )
 {
   using namespace std;
   using namespace phoenix;
 
-  char const * const suite[] =
-    { "user@domain     other.user@other.domain\r\n"
-    , "user@domain     other.user@\r\n"
-    , "user@domain     @domain\r\n"
-    , "user@           alias.for.user@any.other.domain\n"
-    , "user@           other.user@\r\n"
-    , "user@           @domain\r\n"
-    , "@domain         alias.for.user@any.other.domain\n"
-    , "@domain         other.user@\r\n"
-    , "@domain         @domain\r\n"
+  route_test_case const suite[] =
+    { { "user@domain other.user@other.domain",   "user", "domain", "other.user", "other.domain" }
+    , { "user@domain other.user@",               "user", "domain", "other.user", ""             }
+    , { "user@domain @domain",                   "user", "domain", "",           "domain"       }
+    , { "user@domain user",                      "user", "domain", "user",       ""             }
+    , { "user@       other.user@other.domain",   "user", "",       "other.user", "other.domain" }
+    , { "user@       other.user@",               "user", "",       "other.user", ""             }
+    , { "user@       @domain",                   "user", "",       "",           "domain"       }
+    , { "user@       user",                      "user", "",       "user",       ""             }
+    , { "user        other.user@other.domain",   "user", "",       "other.user", "other.domain" }
+    , { "user        other.user@",               "user", "",       "other.user", ""             }
+    , { "user        @domain",                   "user", "",       "",           "domain"       }
+    , { "user        user",                      "user", "",       "user",       ""             }
+    , { "@domain     other.user@other.domain",   "",     "domain", "other.user", "other.domain" }
+    , { "@domain     other.user@",               "",     "domain", "other.user", ""             }
+    , { "@domain     @domain",                   "",     "domain", "",           "domain"       }
+    , { "@domain     user",                      "",     "domain", "user",       ""             }
+    , { "@           other.user@other.domain",   "",     "",       "other.user", "other.domain" }
+    , { "@           other.user@",               "",     "",       "other.user", ""             }
+    , { "@           @domain",                   "",     "",       "",           "domain"       }
+    , { "@           user",                      "",     "",       "user",       ""             }
     };
 
-  BOOST_FOREACH( char const * input, suite )
+  BOOST_FOREACH( route_test_case const & c, suite )
   {
-    cout << "route '" << input << "' ... ";
-    spirit::parse_info<> const r( parse(input, route_p) );
-    BOOST_REQUIRE(r.hit);
-    BOOST_REQUIRE(r.full);
-    cout << std::endl;
+    cout << "parse '" << c.input << "' ... ";
+    route rt(address("<invalid>", "<invalid>"), address("<invalid>", "<invalid>"));
+    spirit::parse_info<> const r( parse(c.input, route_p [var(rt) = arg1]) );
+    cout << "'" << rt.first.first  << "' @ '" << rt.first.second  << "' -> "
+         << "'" << rt.second.first << "' @ '" << rt.second.second << "'" << std::endl;
+    BOOST_CHECK(r.hit);
+    BOOST_CHECK(r.full);
+    BOOST_CHECK_EQUAL(rt.first.first,   c.lhs_user);
+    BOOST_CHECK_EQUAL(rt.first.second,  c.lhs_host);
+    BOOST_CHECK_EQUAL(rt.second.first,  c.rhs_user);
+    BOOST_CHECK_EQUAL(rt.second.second, c.rhs_host);
   }
 }
