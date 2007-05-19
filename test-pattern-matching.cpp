@@ -10,7 +10,7 @@
  * provided the copyright notice and this notice are preserved.
  */
 
-#include "parser.hpp"
+#include "postmaster.hpp"
 
 #define BOOST_AUTO_TEST_MAIN
 #include <boost/test/auto_unit_test.hpp>
@@ -23,8 +23,8 @@ BOOST_AUTO_TEST_CASE( test_config_parser )
   BOOST_CHECK( !match(address("claus", "cryp.example.net"), address("CLAUS", "example.net")) );
 
   // An empty user name in the pattern matches any user.
-  BOOST_CHECK(  match(address("claus", "example.net"), address("", "example.net")) );
-  BOOST_CHECK(  match(address("heinz", "example.net"), address("", "example.net")) );
+  BOOST_CHECK(  match(address("claus", "example.net"), address("", "example.NET")) );
+  BOOST_CHECK(  match(address("heinz", "example.net"), address("", "Example.NET")) );
   BOOST_CHECK( !match(address("claus", "example.net"), address("", "example.org")) );
   BOOST_CHECK( !match(address("heinz", "example.net"), address("", "example.org")) );
 

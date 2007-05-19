@@ -10,7 +10,7 @@
  * provided the copyright notice and this notice are preserved.
  */
 
-#include "parser.hpp"
+#include "postmaster.hpp"
 
 #define BOOST_AUTO_TEST_MAIN
 #include <boost/test/auto_unit_test.hpp>
@@ -48,7 +48,6 @@ struct route_test_case
 BOOST_AUTO_TEST_CASE( test_config_parser )
 {
   using namespace std;
-  using namespace phoenix;
 
   route_test_case const suite[] =
     { { "user@domain other.user@other.domain",   "user", "domain", "other.user", "other.domain" }
@@ -90,7 +89,6 @@ BOOST_AUTO_TEST_CASE( test_config_parser )
 BOOST_AUTO_TEST_CASE( test_multi_mapping_parser )
 {
   using namespace std;
-  using namespace phoenix;
 
   char const * const suite[] =
     { "user@domain other.user@other.domain,   claus@ist.der.beste, heinz"
@@ -130,7 +128,6 @@ BOOST_AUTO_TEST_CASE( test_multi_mapping_parser )
 BOOST_AUTO_TEST_CASE( test_local_mailer_parser )
 {
   using namespace std;
-  using namespace phoenix;
 
   char const * const suite[] =
     { "@    @example.org, pipe(/bin/cat >/dev/null), claus"
