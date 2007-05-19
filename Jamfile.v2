@@ -3,8 +3,12 @@
 exe postmaster
     : main.cpp
     : <use>/boost
-      <use>/boost/program_options <library>/boost/program_options//boost_program_options
-      <use>/boost/test            <library>/boost/test//boost_prg_exec_monitor
-      <use>/boost/system          <library>/boost/system//boost_system
+      <use>/boost/program_options <library>/boost//program_options
+      <use>/boost/test            <library>/boost//prg_exec_monitor
+      <use>/boost/system          <library>/boost//system
     : <threading>single
     ;
+
+test-suite postmaster_tests
+  : [ run routing.cpp /boost//unit_test_framework ]
+  ;
