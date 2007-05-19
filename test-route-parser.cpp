@@ -16,10 +16,10 @@
 #include <boost/test/auto_unit_test.hpp>
 #include <boost/foreach.hpp>
 
-inline bool parse_route(char const * input, route & result)
+inline bool parse(route & result, char const * input)
 {
   using namespace std;
-  return parse_route(input, input + strlen(input), result);
+  return parse(result, input, input + strlen(input));
 }
 
 template <class T, class U>
@@ -77,7 +77,7 @@ BOOST_AUTO_TEST_CASE( test_config_parser )
   {
     cout << "parse '" << c.input << "' ... " << endl;
     route rt(address("@invalid@", "@invalid@"), target_list());
-    bool const full_hit( parse_route(c.input, rt) );
+    bool const full_hit( parse(rt, c.input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
     BOOST_CHECK_EQUAL(rt.first.first,   c.lhs_user);
@@ -114,7 +114,7 @@ BOOST_AUTO_TEST_CASE( test_multi_mapping_parser )
   {
     cout << "parse '" << input << "' ... " << endl;
     route rt(address("@invalid@", "@invalid@"), target_list());
-    bool const full_hit( parse_route(input, rt) );
+    bool const full_hit( parse(rt, input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
     BOOST_CHECK_EQUAL(rt.second.size(), 3u);
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE( test_local_mailer_parser )
   {
     cout << "parse '" << input << "' ... " << endl;
     route rt(address("@invalid@", "@invalid@"), target_list());
-    bool const full_hit( parse_route(input, rt) );
+    bool const full_hit( parse(rt, input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
     BOOST_REQUIRE_EQUAL(rt.second.size(), 3u);

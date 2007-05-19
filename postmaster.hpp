@@ -16,14 +16,33 @@
 #include <vector>
 #include <string>
 #include <utility>
+#include <boost/assert.hpp>
+#include <boost/system/system_error.hpp>
+#include <iostream>
 
-typedef std::string                     string;
+#define POSTMASTER_NAME    "postmaster"
+#define POSTMASTER_VERSION "2007-05-19"
+
+#ifndef NDEBUG
+#  define MSG_TRACE(msg) std::cerr << "trace: [" <<__func__ << "] " << msg << std::endl
+#else
+#  define MSG_TRACE(msg) ((void)(0))
+#endif
+#define MSG_INFO(msg) std::cerr << "info: " << msg << std::endl
+
+using std::string;
 typedef std::pair<string,string>        address;
 
 typedef address                         target;
 typedef std::vector<target>             target_list;
 typedef std::pair<target, target_list>  route;
 
-extern bool parse_route(char const *, char const *, route &);
+bool parse(route &, char const *, char const *);
+
+struct system_error : public boost::system::system_error
+{
+  system_error();
+  explicit system_error(string const & msg);
+};
 
 #endif // POSTMASTER_HPP_INCLUDED

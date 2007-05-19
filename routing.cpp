@@ -12,7 +12,7 @@
 
 #include "parser.hpp"
 
-bool parse_route(char const * begin, char const * end, route & result)
+bool parse(route & result, char const * begin, char const * end)
 {
   using namespace boost::spirit;
   using namespace rfc2822;
