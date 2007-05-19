@@ -12,54 +12,11 @@
 
 #include "parser.hpp"
 
-struct target_id : public string
-{
-  template <class Iterator>
-  target_id(Iterator b, Iterator e)
-  {
-    string::push_back('<');
-    string::insert(string::end(), b, e);
-    string::push_back('>');
-  };
-};
-
-struct target_parameter : public string
-{
-  template <class Iterator>
-  target_parameter(Iterator b, Iterator e) : string(++b, --e) { }
-};
-
-struct target_parser : public spirit::grammar<target_parser, address_closure::context_t>
-{
-  target_parser() { }
-
-  template<typename scannerT>
-  struct definition
-  {
-    spirit::rule<scannerT> target;
-
-    definition(target_parser const & self)
-    {
-      using namespace spirit;
-      using namespace phoenix;
-
-      target
-        = word_p                            [ bind(&address::first)(self.val)  = construct_<target_id>(arg1, arg2) ]
-          >> *wsp_p
-          >> confix_p('(', *anychar_p, ')') [ bind(&address::second)(self.val) = construct_<target_parameter>(arg1, arg2) ]
-        ;
-      BOOST_SPIRIT_DEBUG_NODE(target);
-    }
-
-    spirit::rule<scannerT> const & start() const { return target; }
-  };
-};
-
-target_parser const  target_p;
-
 bool parse_route(char const * begin, char const * end, route & result)
 {
-  using namespace spirit;
+  using namespace boost::spirit;
+  using namespace rfc2822;
+
   route  rt;
 
   rule<> route_p

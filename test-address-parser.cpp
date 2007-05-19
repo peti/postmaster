@@ -26,7 +26,9 @@ struct address_test_case
 BOOST_AUTO_TEST_CASE( test_rfc2821_address_parser )
 {
   using namespace std;
+  using namespace boost::spirit;
   using namespace phoenix;
+  using namespace rfc2822;
 
   address_test_case const suite[] =
     { { "foo .\tbar @ example\t \t.net ",       "foo.bar",   "example.net" }
@@ -38,7 +40,7 @@ BOOST_AUTO_TEST_CASE( test_rfc2821_address_parser )
   {
     cout << "parse '" << c.input << "' ... ";
     address addr("<invalid>", "<invalid>");
-    spirit::parse_info<> const r( parse(c.input, address_p [var(addr) = arg1], wsp_p) );
+    parse_info<> const r( parse(c.input, address_p [var(addr) = arg1], wsp_p) );
     cout << addr.first << " @ " << addr.second << std::endl;
     BOOST_CHECK(r.hit);
     BOOST_CHECK_EQUAL(addr.first,  c.user);
