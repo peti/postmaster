@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2007 Peter Simons <simons@cryp.to>
+ * Copyright (c) 2007 Peter Simons <simons@cryp.to>
  *
  * This software is provided 'as-is', without any express or
  * implied warranty. In no event will the authors be held liable
