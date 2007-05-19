@@ -17,6 +17,7 @@ lib pm_error
 lib pm_routing : routing.cpp : <use>/boost ;
 
 test-suite postmaster_tests
-  : [ run test-address-parser.cpp          /boost//unit_test_framework ]
-    [ run test-route-parser.cpp pm_routing /boost//unit_test_framework ]
+  : [ run test-address-parser.cpp               /boost//unit_test_framework ]
+    [ run test-route-parser.cpp pm_routing      /boost//unit_test_framework ]
+    [ run test-pattern-matching.cpp pm_routing  /boost//unit_test_framework ]
   ;

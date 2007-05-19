@@ -35,3 +35,14 @@ bool parse(route & result, char const * begin, char const * end)
   std::swap(result, rt);
   return full_hit;
 }
+
+static bool match(string const & str, string const & patt)
+{
+  using namespace std;
+  return patt.empty() || strcasecmp(str.c_str(), patt.c_str()) == 0;
+}
+
+bool match(address const & addr, address const & patt)
+{
+  return match(addr.first, patt.first) && match(addr.second, patt.second);
+}

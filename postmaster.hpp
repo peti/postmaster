@@ -38,11 +38,12 @@ typedef std::vector<target>             target_list;
 typedef std::pair<target, target_list>  route;
 
 bool parse(route &, char const *, char const *);
+bool match(address const & addr, address const & patt);
 
 struct system_error : public boost::system::system_error
 {
   system_error();
-  explicit system_error(string const & msg);
+  explicit system_error(string const & context);
 };
 
 #endif // POSTMASTER_HPP_INCLUDED
