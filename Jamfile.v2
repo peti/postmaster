@@ -1,15 +1,17 @@
 # build postmaster
 
 exe postmaster
-    : main.cpp
-    : <use>/boost
-      <use>/boost/program_options <library>/boost//program_options
-      <use>/boost/test            <library>/boost//prg_exec_monitor
-      <use>/boost/system          <library>/boost//system
-    : <threading>single
-    ;
+  : main.cpp pm_routing
+  : <use>/boost
+    <use>/boost/program_options <library>/boost//program_options
+    <use>/boost/test            <library>/boost//prg_exec_monitor
+    <use>/boost/system          <library>/boost//system
+  : <threading>single
+  ;
+
+lib pm_routing : routing.cpp : <use>/boost ;
 
 test-suite postmaster_tests
-  : [ run routing.cpp              /boost//unit_test_framework ]
-    [ run test-address-parser.cpp  /boost//unit_test_framework ]
+  : [ run test-address-parser.cpp          /boost//unit_test_framework ]
+    [ run test-route-parser.cpp pm_routing /boost//unit_test_framework ]
   ;

@@ -18,12 +18,11 @@
 #  define BOOST_SPIRIT_DEBUG_OUT std::cerr
 #endif
 
+#include "postmaster.hpp"
 #include "rfc2822/address.hpp"
 #include <boost/spirit/phoenix/binders.hpp>
 
 using namespace rfc2822;
-
-typedef std::pair<std::string,std::string> address;
 
 struct address_closure : public spirit::closure<address_closure, address>
 {
