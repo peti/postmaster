@@ -10,5 +10,6 @@ exe postmaster
     ;
 
 test-suite postmaster_tests
-  : [ run routing.cpp /boost//unit_test_framework ]
+  : [ run routing.cpp              /boost//unit_test_framework ]
+    [ run test-address-parser.cpp  /boost//unit_test_framework ]
   ;
