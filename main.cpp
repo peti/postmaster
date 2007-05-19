@@ -70,8 +70,11 @@ int cpp_main(int argc, char ** argv)
   // Parse the command line: HTTP Page Delivery and Logging
   //
   string                hostname;
+  string                config_path;
   po::options_description httpd_opts("SMTP Daemon Configuration");
   httpd_opts.add_options()
+    ( "config",         po::value<string>(&config_path)->default_value("postmaster.cf"),
+                                                                        "path to postmaster configuration" )
     ( "hostname",       po::value<string>(&hostname),                   "hostname to use in HELO response" )
     ;
   //
