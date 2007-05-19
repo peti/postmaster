@@ -16,12 +16,13 @@
 #endif
 
 #include "rfc2822/address.hpp"
-#include "rfc2822/skipper.hpp"
 #include <boost/spirit/phoenix/binders.hpp>
-#include <boost/foreach.hpp>
+#include <vector>
+#include <boost/assert.hpp>
 
 #define BOOST_AUTO_TEST_MAIN
 #include <boost/test/auto_unit_test.hpp>
+#include <boost/foreach.hpp>
 
 using namespace rfc2822;
 
@@ -89,7 +90,8 @@ BOOST_AUTO_TEST_CASE( test_rfc2821_address_parser )
   }
 }
 
-typedef std::pair<address,address> route;
+typedef std::vector<address>                    address_list;
+typedef std::pair<address, address_list>        route;
 
 struct route_closure : public spirit::closure<route_closure, route>
 {
@@ -103,33 +105,34 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
   template<typename scannerT>
   struct definition
   {
-    spirit::rule<scannerT>    top;
-    spirit::subrule<0>        stmt;
-    spirit::subrule<1>        lhs;
-    spirit::subrule<2>        rhs;
+    spirit::rule<scannerT, route_closure::context_t>     top;
+    spirit::rule<scannerT, address_closure::context_t>   lhs;
+    spirit::rule<scannerT, address_closure::context_t>   rhs;
+    spirit::rule<scannerT, address_closure::context_t>   addr;
 
     definition(route_parser const & self)
     {
       using namespace spirit;
       using namespace phoenix;
 
-      top =
-        ( stmt =  lhs >> wsp_p >> list_p(*wsp_p >> rhs, ',') >> !cr_p >> lf_p
+      top =  lhs                        [ bind(&route::first)(top.val)  = arg1]
+             >> wsp_p
+             >> list_p
+             (  *wsp_p >> rhs
+             ,  ','
+             );
 
-        , lhs  =  (  ch_p('@') >> domain_p [bind(&address::second)(bind(&route::first)(self.val)) = arg1]
-                  |  address_p             [bind(&route::first)(self.val) = arg1]
-                  |  local_part_p          [bind(&address::first)(bind(&route::first)(self.val)) = arg1] >> !ch_p('@')
-                  |  ch_p('@')
-                  )
+      lhs =  addr [lhs.val = arg1] | ch_p('@');
 
-        , rhs  =  (  ch_p('@') >> domain_p [bind(&address::second)(bind(&route::second)(self.val)) = arg1]
-                  |  address_p             [bind(&route::second)(self.val) = arg1]
-                  |  local_part_p          [bind(&address::first)(bind(&route::second)(self.val)) = arg1] >> !ch_p('@')
-                  )
-        );
+      rhs =  addr [rhs.val = arg1];
+
+      addr = (  ch_p('@') >> domain_p   [bind(&address::second)(addr.val) = arg1]
+             |  address_p               [addr.val = arg1]
+             |  local_part_p            [bind(&address::first)(addr.val) = arg1] >> !ch_p('@')
+             );
     }
 
-    spirit::rule<scannerT> const & start() const { return top; }
+    spirit::rule<scannerT, route_closure::context_t> const & start() const { return top; }
   };
 };
 
@@ -150,41 +153,42 @@ BOOST_AUTO_TEST_CASE( test_config_parser )
   using namespace phoenix;
 
   route_test_case const suite[] =
-    { { "user@domain other.user@other.domain\n",   "user", "domain", "other.user", "other.domain" }
-    , { "user@domain other.user@\n",               "user", "domain", "other.user", ""             }
-    , { "user@domain @domain\n",                   "user", "domain", "",           "domain"       }
-    , { "user@domain user\n",                      "user", "domain", "user",       ""             }
-    , { "user@       other.user@other.domain\n",   "user", "",       "other.user", "other.domain" }
-    , { "user@       other.user@\n",               "user", "",       "other.user", ""             }
-    , { "user@       @domain\n",                   "user", "",       "",           "domain"       }
-    , { "user@       user\n",                      "user", "",       "user",       ""             }
-    , { "user        other.user@other.domain\n",   "user", "",       "other.user", "other.domain" }
-    , { "user        other.user@\n",               "user", "",       "other.user", ""             }
-    , { "user        @domain\n",                   "user", "",       "",           "domain"       }
-    , { "user        user\n",                      "user", "",       "user",       ""             }
-    , { "@domain     other.user@other.domain\n",   "",     "domain", "other.user", "other.domain" }
-    , { "@domain     other.user@\n",               "",     "domain", "other.user", ""             }
-    , { "@domain     @domain\n",                   "",     "domain", "",           "domain"       }
-    , { "@domain     user\n",                      "",     "domain", "user",       ""             }
-    , { "@           other.user@other.domain\n",   "",     "",       "other.user", "other.domain" }
-    , { "@           other.user@\n",               "",     "",       "other.user", ""             }
-    , { "@           @domain\n",                   "",     "",       "",           "domain"       }
-    , { "@           user\n",                      "",     "",       "user",       ""             }
+    { { "user@domain other.user@other.domain",   "user", "domain", "other.user", "other.domain" }
+    , { "user@domain other.user@",               "user", "domain", "other.user", ""             }
+    , { "user@domain @domain",                   "user", "domain", "",           "domain"       }
+    , { "user@domain user",                      "user", "domain", "user",       ""             }
+    , { "user@       other.user@other.domain",   "user", "",       "other.user", "other.domain" }
+    , { "user@       other.user@",               "user", "",       "other.user", ""             }
+    , { "user@       @domain",                   "user", "",       "",           "domain"       }
+    , { "user@       user",                      "user", "",       "user",       ""             }
+    , { "user        other.user@other.domain",   "user", "",       "other.user", "other.domain" }
+    , { "user        other.user@",               "user", "",       "other.user", ""             }
+    , { "user        @domain",                   "user", "",       "",           "domain"       }
+    , { "user        user",                      "user", "",       "user",       ""             }
+    , { "@domain     other.user@other.domain",   "",     "domain", "other.user", "other.domain" }
+    , { "@domain     other.user@",               "",     "domain", "other.user", ""             }
+    , { "@domain     @domain",                   "",     "domain", "",           "domain"       }
+    , { "@domain     user",                      "",     "domain", "user",       ""             }
+    , { "@           other.user@other.domain",   "",     "",       "other.user", "other.domain" }
+    , { "@           other.user@",               "",     "",       "other.user", ""             }
+    , { "@           @domain",                   "",     "",       "",           "domain"       }
+    , { "@           user",                      "",     "",       "user",       ""             }
     };
 
   BOOST_FOREACH( route_test_case const & c, suite )
   {
     cout << "parse '" << c.input << "' ... ";
-    route rt(address("<invalid>", "<invalid>"), address("<invalid>", "<invalid>"));
+    route rt(address("<invalid>", "<invalid>"), address_list());
     spirit::parse_info<> const r( parse(c.input, route_p [var(rt) = arg1]) );
-    cout << "'" << rt.first.first  << "' @ '" << rt.first.second  << "' -> "
-         << "'" << rt.second.first << "' @ '" << rt.second.second << "'" << std::endl;
+    cout << "'" << rt.first.first << "' @ '" << rt.first.second << "' -> ";
     BOOST_CHECK(r.hit);
     BOOST_CHECK(r.full);
+    BOOST_REQUIRE_EQUAL(rt.second.size(), 1u);
+    cout << "'" << rt.second[0].first << "' @ '" << rt.second[0].second << "'" << std::endl;
     BOOST_CHECK_EQUAL(rt.first.first,   c.lhs_user);
     BOOST_CHECK_EQUAL(rt.first.second,  c.lhs_host);
-    BOOST_CHECK_EQUAL(rt.second.first,  c.rhs_user);
-    BOOST_CHECK_EQUAL(rt.second.second, c.rhs_host);
+    BOOST_CHECK_EQUAL(rt.second[0u].first,  c.rhs_user);
+    BOOST_CHECK_EQUAL(rt.second[0u].second, c.rhs_host);
   }
 }
 
@@ -194,26 +198,26 @@ BOOST_AUTO_TEST_CASE( test_multi_mapping_parser )
   using namespace phoenix;
 
   char const * const suite[] =
-    { "user@domain other.user@other.domain, claus@ist.der.beste, heinz\n"
-    , "user@       other.user@other.domain, claus@ist.der.beste, heinz\n"
-    , "user        other.user@other.domain, claus@ist.der.beste, heinz\n"
-    , "user        other.user@,             claus@ist.der.beste, heinz\n"
-    , "user        @domain,                 claus@ist.der.beste, heinz\n"
-    , "user        user,                    claus@ist.der.beste, heinz\n"
-    , "@domain     other.user@other.domain, claus@ist.der.beste, heinz\n"
-    , "@domain     other.user@,             claus@ist.der.beste, heinz\n"
-    , "@domain     @domain,                 claus@ist.der.beste, heinz\n"
-    , "@domain     user,                    claus@ist.der.beste, heinz\n"
-    , "@           other.user@other.domain, claus@ist.der.beste, heinz\n"
-    , "@           other.user@,             claus@ist.der.beste, heinz\n"
-    , "@           @domain,                 claus@ist.der.beste, heinz\n"
-    , "@           user,                    claus@ist.der.beste, heinz\n"
+    { "user@domain other.user@other.domain, claus@ist.der.beste, heinz"
+    , "user@       other.user@other.domain, claus@ist.der.beste, heinz"
+    , "user        other.user@other.domain, claus@ist.der.beste, heinz"
+    , "user        other.user@,             claus@ist.der.beste, heinz"
+    , "user        @domain,                 claus@ist.der.beste, heinz"
+    , "user        user,                    claus@ist.der.beste, heinz"
+    , "@domain     other.user@other.domain, claus@ist.der.beste, heinz"
+    , "@domain     other.user@,             claus@ist.der.beste, heinz"
+    , "@domain     @domain,                 claus@ist.der.beste, heinz"
+    , "@domain     user,                    claus@ist.der.beste, heinz"
+    , "@           other.user@other.domain, claus@ist.der.beste, heinz"
+    , "@           other.user@,             claus@ist.der.beste, heinz"
+    , "@           @domain,                 claus@ist.der.beste, heinz"
+    , "@           user,                    claus@ist.der.beste, heinz"
     };
 
   BOOST_FOREACH( char const * input, suite )
   {
     cout << "parse '" << input << "' ... ";
-    route rt(address("<invalid>", "<invalid>"), address("<invalid>", "<invalid>"));
+    route rt(address("<invalid>", "<invalid>"), address_list());
     spirit::parse_info<> const r( parse(input, route_p [var(rt) = arg1]) );
     cout << "rest: '" << r.stop << "'" << endl;;
     BOOST_CHECK(r.hit);
