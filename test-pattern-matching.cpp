@@ -14,7 +14,6 @@
 
 #define BOOST_AUTO_TEST_MAIN
 #include <boost/test/auto_unit_test.hpp>
-#include <boost/foreach.hpp>
 
 BOOST_AUTO_TEST_CASE( test_config_parser )
 {
