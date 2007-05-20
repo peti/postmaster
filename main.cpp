@@ -99,12 +99,12 @@ int cpp_main(int argc, char ** argv)
   //
   the_io_service.reset(new io_service);
   MSG_INFO(  POSTMASTER_NAME << " version " << POSTMASTER_VERSION
-      << " running " << (detach ? "as daemon" : "on current tty")
-      );
+          << " running " << (detach ? "as daemon" : "on current tty")
+          );
   //
   // Configure TCP listeners.
   //
-  typedef boost::shared_ptr<ip::tcp::acceptor>      shared_acceptor;
+  typedef boost::shared_ptr<ip::tcp::acceptor>  shared_acceptor;
   typedef vector<shared_acceptor>               acceptor_array;
   acceptor_array                                acceptors;
   for (vector<string>::iterator i( listen_addrs.begin() ); i != listen_addrs.end(); ++i)
@@ -129,8 +129,8 @@ int cpp_main(int argc, char ** argv)
                  << "'"
                  );
         addr = ip::tcp::endpoint( ip::address::from_string(i->substr(0, k))
-                            , atoi(i->substr(k + 1u).c_str())
-                            );
+                                , atoi(i->substr(k + 1u).c_str())
+                                );
     }
     MSG_INFO("listen on network address " << addr);
     shared_acceptor const acc( new ip::tcp::acceptor(*the_io_service, addr) );
