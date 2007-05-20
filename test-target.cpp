@@ -21,7 +21,9 @@
 
 static void cleanup()
 {
-  //remove(TEST_PATHNAME);
+#ifdef NDEBUG
+  remove(TEST_PATHNAME);
+#endif
 }
 
 BOOST_AUTO_TEST_CASE( test_file_target )
@@ -54,7 +56,6 @@ BOOST_AUTO_TEST_CASE( test_pipe_target )
     };
 
   target_ptr f( pipe_target("cat >> " TEST_PATHNAME) );
-  atexit(&cleanup);
   BOOST_FOREACH( char const * p, body )
   {
     f->feed(p, p + strlen(p));

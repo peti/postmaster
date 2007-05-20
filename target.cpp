@@ -57,19 +57,8 @@ protected:
 public:
   fd_target(string const & id, int fd) : _id(id), _fd(fd)
   {
-    BOOST_ASSERT(_fd >= 0);
     BOOST_ASSERT(!_id.empty());
-    flock lk;
-    memset(&lk, 0, sizeof(lk));
-    lk.l_type   = F_WRLCK;
-    lk.l_whence = SEEK_CUR;
-    int const rc( fcntl(_fd, F_SETLK, &lk) );
-    if (rc != 0)
-    {
-      release(_id, _fd);
-      throw system_error(string("cannot lock target '" + _id + "'"));
-    }
-    MSG_TRACE("target " << _id << " locked successfully");
+    BOOST_ASSERT(_fd >= 0);
   }
 
   ~fd_target()
@@ -89,6 +78,7 @@ public:
 
   void commit()
   {
+    MSG_TRACE("release target '" << _id << "'");
     release(_id, _fd);
   }
 };
@@ -96,8 +86,18 @@ public:
 target_ptr file_target(char const * path)
 {
   BOOST_ASSERT(path);
-  int const fd( open(path,  O_WRONLY | O_CREAT | O_APPEND | O_SYNC, S_IRUSR | S_IWUSR) );
+  int fd( open(path,  O_WRONLY | O_CREAT | O_APPEND | O_SYNC, S_IRUSR | S_IWUSR) );
   if (fd <= 0) throw system_error(string("cannot open '") + path + "' for writing");
+  flock lk;
+  memset(&lk, 0, sizeof(lk));
+  lk.l_type   = F_WRLCK;
+  lk.l_whence = SEEK_CUR;
+  int const rc( fcntl(fd, F_SETLK, &lk) );
+  if (rc != 0)
+  {
+    release(path, fd);
+    throw system_error(string("cannot lock target '") + path + "'");
+  }
   return target_ptr( new fd_target(path, fd) );
 }
 
@@ -108,13 +108,31 @@ class child_target : public fd_target
 public:
   child_target(pid_t child, string const & id, int fd) : fd_target(id, fd), _child(child)
   {
+    BOOST_ASSERT(_child);
   }
 
   ~child_target()
   {
-    int status;
-    waitpid(_child, &status, 0);
-    MSG_TRACE("target '" << _id << "' returned code " << status);
+    if (_child)
+    {
+      int status;
+      waitpid(_child, &status, 0);
+      MSG_TRACE("target '" << _id << "' returned code " << status);
+    }
+  }
+
+  void commit()
+  {
+    MSG_TRACE("release target '" << _id << "'");
+    if (_child)
+    {
+      fd_target::commit();
+      int status;
+      waitpid(_child, &status, 0);
+      _child = 0;
+      if (status != 0)
+        throw runtime_error(string("target '") + _id + "' failed");
+    }
   }
 };
 
