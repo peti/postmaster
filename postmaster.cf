@@ -1,0 +1,4 @@
+#
+# catch all
+#
+@       pipe(/bin/cat >/tmp/pm-mail-simons)

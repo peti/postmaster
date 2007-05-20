@@ -1,5 +1,16 @@
                  Postmaster Design Specification
 
+An Example E-Mail Transaction
+
+       Client                     Server
+  remote.exmple.net           mail.example.com
+  192.128.12.2:3392             10.0.0.1:25
+
+       connect()
+         --------------------------->
+                                  accept()
+
+
 Who needs this software?
 
   The primary target audience are small to middle-sized mail
