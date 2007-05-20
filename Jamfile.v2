@@ -1,24 +1,29 @@
 # build postmaster
 
 exe postmaster
-  : main.cpp pm_routing pm_error
+  : main.cpp pm_routing pm_error pm_target
   : <use>/boost
     <use>/boost/program_options <library>/boost//program_options
-  : <threading>single
+    <threading>single
   ;
 
 lib pm_error
   : system-error.cpp
   : <use>/boost
     <use>/boost/system <library>/boost//system
-  : <library>/boost//system
+    <threading>single
+  :
+  : <library>/boost//system <threading>single
   ;
 
-lib pm_routing : routing.cpp : <use>/boost ;
+lib pm_routing : routing.cpp : <use>/boost <threading>single ;
+
+lib pm_target  : target.cpp  : <use>/boost <threading>single ;
 
 test-suite postmaster_tests
   : [ run test-address-parser.cpp               /boost//unit_test_framework ]
+    [ run test-nocase-string.cpp                /boost//unit_test_framework ]
     [ run test-route-parser.cpp pm_routing      /boost//unit_test_framework ]
     [ run test-pattern-matching.cpp pm_routing  /boost//unit_test_framework ]
-    [ run test-nocase-string.cpp                /boost//unit_test_framework ]
+    [ run test-target.cpp pm_target pm_error    /boost//unit_test_framework ]
   ;
