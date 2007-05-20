@@ -28,7 +28,8 @@
 #else
 #  define MSG_TRACE(msg) ((void)(0))
 #endif
-#define MSG_INFO(msg) std::cerr << "info: " << msg << std::endl
+#define MSG_INFO(msg)  std::cerr << "info: " << msg << std::endl
+#define MSG_ERROR(msg) std::cerr << "*** " << msg << std::endl
 
 using std::string;
 typedef std::pair<string,string>        address;
