@@ -43,3 +43,21 @@ BOOST_AUTO_TEST_CASE( test_file_target )
   }
   f->commit();
 }
+
+BOOST_AUTO_TEST_CASE( test_pipe_target )
+{
+  using namespace std;
+
+  char const * const body[] =
+    { "piping into the same file"
+    , "\n"
+    };
+
+  target_ptr f( pipe_target("cat >> " TEST_PATHNAME) );
+  atexit(&cleanup);
+  BOOST_FOREACH( char const * p, body )
+  {
+    f->feed(p, p + strlen(p));
+  }
+  f->commit();
+}
