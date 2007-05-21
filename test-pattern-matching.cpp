@@ -15,7 +15,7 @@
 #define BOOST_AUTO_TEST_MAIN
 #include <boost/test/auto_unit_test.hpp>
 
-BOOST_AUTO_TEST_CASE( test_config_parser )
+BOOST_AUTO_TEST_CASE( test_pattern_matching )
 {
   // Case doesn't matter in the match.
   BOOST_CHECK(  match(address("claus", "cryp.example.net"), address("CLAUS", "Cryp.example.net")) );
