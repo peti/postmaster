@@ -33,13 +33,13 @@
 
 using std::string;
 typedef std::pair<string,string>        address;
-
-typedef address                         target;
+typedef address                         pattern;
+typedef pattern                         target;
 typedef std::vector<target>             target_list;
 typedef std::pair<target, target_list>  route;
 
 bool parse(route &, char const *, char const *);
-bool match(address const & addr, address const & patt);
+bool match(address const &, pattern const &);
 
 struct system_error : public boost::system::system_error
 {
