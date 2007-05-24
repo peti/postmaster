@@ -15,7 +15,8 @@
 bool parse(route & result, char const * begin, char const * end)
 {
   using namespace boost::spirit;
-  return parse(begin, end, route_p [assign_a(result)]).full;
+  using rfc2822::wsp_p;
+  return parse(begin, end, route_p [assign_a(result)] >> end_p, wsp_p).full;
 }
 
 static bool match(string const & str, string const & patt)

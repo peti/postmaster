@@ -29,6 +29,12 @@ struct address_closure : public spirit::closure<address_closure, address>
   member1 val;
 };
 
+#define PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(NAME) \
+  PP_PHOENIX_DEFINE_TRIVIAL_RECORD_ACCESSOR(NAME, typename Record::NAME ## _type &)
+
+PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(first);
+PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(second);
+
 struct address_parser : public spirit::grammar<address_parser, address_closure::context_t>
 {
   address_parser() { }
@@ -45,9 +51,9 @@ struct address_parser : public spirit::grammar<address_parser, address_closure::
       using namespace rfc2822;
 
       addr
-        = local_part_p [bind(&address::first)(self.val)  = arg1]
+        = local_part_p [first(self.val) = arg1]
           >> ch_p('@')
-          >> domain_p  [bind(&address::second)(self.val) = arg1]
+          >> domain_p  [second(self.val) = arg1]
         ;
 
       BOOST_SPIRIT_DEBUG_NODE(addr);
@@ -75,9 +81,9 @@ struct address_pattern_parser : public spirit::grammar<address_pattern_parser, a
       using namespace rfc2822;
 
       addr_pattern
-        =  (  ch_p('@') >> domain_p  [ bind(&address::second)(self.val) = arg1 ]
+        =  (  ch_p('@') >> domain_p  [ second(self.val) = arg1 ]
            |  address_p              [ self.val = arg1 ]
-           |  local_part_p           [ bind(&address::first)(self.val)  = arg1 ] >> !ch_p('@')
+           |  local_part_p           [ first(self.val)  = arg1 ] >> !ch_p('@')
            )
         ;
 
@@ -123,9 +129,8 @@ struct target_parser : public spirit::grammar<target_parser, address_closure::co
       using namespace rfc2822;
 
       target
-        = word_p                            [ bind(&address::first)(self.val)  = construct_<target_id>(arg1, arg2) ]
-          >> *wsp_p
-          >> confix_p('(', *anychar_p, ')') [ bind(&address::second)(self.val) = construct_<target_parameter>(arg1, arg2) ]
+        = word_p                            [ first(self.val)  = construct_<target_id>(arg1, arg2) ]
+          >> confix_p('(', *anychar_p, ')') [ second(self.val) = construct_<target_parameter>(arg1, arg2) ]
         ;
       BOOST_SPIRIT_DEBUG_NODE(target);
     }
@@ -141,53 +146,26 @@ struct route_closure : public spirit::closure<route_closure, route>
   member1 val;
 };
 
-struct route_lhs_impl
-{
-  template <typename Pair>
-  struct result
-  {
-    typedef target & type;
-  };
-  template <typename Pair>
-  target & operator() (Pair & p) const
-  {
-    return p.first;
-  }
-};
+#define PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, TYPE, METHOD)      \
+  struct NAME ## _impl                                          \
+  {                                                             \
+    template <typename Container, typename Item>                \
+    struct result                                               \
+    {                                                           \
+      typedef TYPE type;                                        \
+    };                                                          \
+    template <typename Container, typename Item>                \
+    TYPE operator()(Container & c, Item const & item) const     \
+    {                                                           \
+      c.METHOD ( item );                                        \
+    }                                                           \
+  };                                                            \
+  phoenix::function<NAME ## _impl> const NAME = NAME ## _impl()
 
-struct route_rhs_impl
-{
-  template <typename Pair>
-  struct result
-  {
-    typedef target_list & type;
-  };
-  template <typename Pair>
-  target_list & operator() (Pair & p) const
-  {
-    return p.second;
-  }
-};
+#define PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(NAME) \
+   PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, void, NAME)
 
-phoenix::function<route_lhs_impl> const route_lhs = route_lhs_impl();
-phoenix::function<route_rhs_impl> const route_rhs = route_rhs_impl();
-
-struct push_back_impl
-{
-  template <typename Container, typename Item>
-  struct result
-  {
-    typedef void type;
-  };
-
-  template <typename Container, typename Item>
-  void operator()(Container& c, Item const& item) const
-  {
-    c.push_back(item);
-  }
-};
-
-phoenix::function<push_back_impl> const push_back = push_back_impl();
+PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(push_back);
 
 struct route_parser : public spirit::grammar<route_parser, route_closure::context_t>
 {
@@ -197,6 +175,8 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
   struct definition
   {
     spirit::rule<scannerT> route_p;
+    spirit::subrule<0>     lhs_p;
+    spirit::subrule<1>     rhs_p;
 
     definition(route_parser const & self)
     {
@@ -204,17 +184,18 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
       using namespace phoenix;
       using namespace rfc2822;
 
-      route_p
-        =  ( address_pattern_p                          [ route_lhs(self.val) = arg1 ]
-           | ch_p('@')                                  [ route_lhs(self.val) = construct_<target>() ]
-           )
-             >> wsp_p                                   [ route_rhs(self.val) = construct_<target_list>() ]
-             >> list_p( *wsp_p >> ( target_p            [ push_back(route_rhs(self.val), arg1) ]
-                                  | address_pattern_p   [ push_back(route_rhs(self.val), arg1) ]
-                                  )
-                      , ','
-                      )
-        ;
+      route_p =
+        (
+          lhs_p
+            =  lexeme_d[ address_pattern_p [ first(self.val) = arg1 ]  |  ch_p('@') ]
+            >> list_p(rhs_p, ',')
+
+        , rhs_p
+            = lexeme_d
+            [  target_p            [ push_back(second(self.val), arg1) ]
+            |  address_pattern_p   [ push_back(second(self.val), arg1) ]
+            ]
+        );
 
       BOOST_SPIRIT_DEBUG_NODE(route_p);
     }

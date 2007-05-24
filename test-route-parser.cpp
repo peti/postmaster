@@ -72,10 +72,11 @@ BOOST_AUTO_TEST_CASE( test_config_parser )
     , { "@           user",                      "",     "",       "user",       ""             }
     };
 
+  route rt(address("@invalid@", "@invalid@"), target_list());
+
   BOOST_FOREACH( route_test_case const & c, suite )
   {
     cout << "parse '" << c.input << "' ... " << endl;
-    route rt(address("@invalid@", "@invalid@"), target_list());
     bool const full_hit( parse(rt, c.input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
@@ -108,11 +109,11 @@ BOOST_AUTO_TEST_CASE( test_multi_mapping_parser )
     , "@           pipe(/bin/cat >/dev/null), claus@ist.der.beste, heinz"
     };
 
+  route rt(address("@invalid@", "@invalid@"), target_list());
   BOOST_FOREACH( char const * input, suite )
   {
     cout << "parse '" << input << "' ... " << endl;
-    route rt(address("@invalid@", "@invalid@"), target_list());
-    bool const full_hit( parse(rt, input) );
+      bool const full_hit( parse(rt, input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
     BOOST_CHECK_EQUAL(rt.second.size(), 3u);
@@ -130,14 +131,14 @@ BOOST_AUTO_TEST_CASE( test_local_mailer_parser )
   using namespace std;
 
   char const * const suite[] =
-    { "@    @example.org, pipe(/bin/cat >/dev/null), claus"
-    , "@    relay([127.0.0.2]), what-ever(/bin/cat >/dev/null), claus"
+    { " @ \t   @example.org, pipe(/bin/cat >/dev/null), claus\t"
+    , "@    relay([127.0.0.2]), what-ever(/bin/cat\t>/dev/null), claus"
     };
 
+  route rt(address("@invalid@", "@invalid@"), target_list());
   BOOST_FOREACH( char const * input, suite )
   {
     cout << "parse '" << input << "' ... " << endl;
-    route rt(address("@invalid@", "@invalid@"), target_list());
     bool const full_hit( parse(rt, input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
