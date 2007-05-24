@@ -15,25 +15,7 @@
 bool parse(route & result, char const * begin, char const * end)
 {
   using namespace boost::spirit;
-  using namespace rfc2822;
-
-  route  rt;
-
-  rule<> route_p
-    =  ( address_pattern_p              [ assign_a(rt.first) ]
-       | ch_p('@')
-       )
-    >> wsp_p
-    >> list_p
-       ( *wsp_p >> ( target_p           [ push_back_a(rt.second) ]
-                   | address_pattern_p  [ push_back_a(rt.second) ]
-                   )
-       , ','
-       )
-    ;
-  bool const full_hit( parse(begin, end, route_p).full );
-  std::swap(result, rt);
-  return full_hit;
+  return parse(begin, end, route_p [assign_a(result)]).full;
 }
 
 static bool match(string const & str, string const & patt)

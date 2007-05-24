@@ -57,7 +57,7 @@ struct address_parser : public spirit::grammar<address_parser, address_closure::
   };
 };
 
-address_parser const  address_p;
+address_parser const address_p;
 
 struct address_pattern_parser : public spirit::grammar<address_pattern_parser, address_closure::context_t>
 {
@@ -88,7 +88,7 @@ struct address_pattern_parser : public spirit::grammar<address_pattern_parser, a
   };
 };
 
-address_pattern_parser const  address_pattern_p;
+address_pattern_parser const address_pattern_p;
 
 struct target_parser : public spirit::grammar<target_parser, address_closure::context_t>
 {
@@ -134,6 +134,95 @@ struct target_parser : public spirit::grammar<target_parser, address_closure::co
   };
 };
 
-target_parser const  target_p;
+target_parser const target_p;
+
+struct route_closure : public spirit::closure<route_closure, route>
+{
+  member1 val;
+};
+
+struct route_lhs_impl
+{
+  template <typename Pair>
+  struct result
+  {
+    typedef target & type;
+  };
+  template <typename Pair>
+  target & operator() (Pair & p) const
+  {
+    return p.first;
+  }
+};
+
+struct route_rhs_impl
+{
+  template <typename Pair>
+  struct result
+  {
+    typedef target_list & type;
+  };
+  template <typename Pair>
+  target_list & operator() (Pair & p) const
+  {
+    return p.second;
+  }
+};
+
+phoenix::function<route_lhs_impl> const route_lhs = route_lhs_impl();
+phoenix::function<route_rhs_impl> const route_rhs = route_rhs_impl();
+
+struct push_back_impl
+{
+  template <typename Container, typename Item>
+  struct result
+  {
+    typedef void type;
+  };
+
+  template <typename Container, typename Item>
+  void operator()(Container& c, Item const& item) const
+  {
+    c.push_back(item);
+  }
+};
+
+phoenix::function<push_back_impl> const push_back = push_back_impl();
+
+struct route_parser : public spirit::grammar<route_parser, route_closure::context_t>
+{
+  route_parser() { }
+
+  template<typename scannerT>
+  struct definition
+  {
+    spirit::rule<scannerT> route_p;
+
+    definition(route_parser const & self)
+    {
+      using namespace boost::spirit;
+      using namespace phoenix;
+      using namespace rfc2822;
+
+      route_p
+        =  ( address_pattern_p                          [ route_lhs(self.val) = arg1 ]
+           | ch_p('@')                                  [ route_lhs(self.val) = construct_<target>() ]
+           )
+             >> wsp_p                                   [ route_rhs(self.val) = construct_<target_list>() ]
+             >> list_p( *wsp_p >> ( target_p            [ push_back(route_rhs(self.val), arg1) ]
+                                  | address_pattern_p   [ push_back(route_rhs(self.val), arg1) ]
+                                  )
+                      , ','
+                      )
+        ;
+
+      BOOST_SPIRIT_DEBUG_NODE(route_p);
+    }
+
+    spirit::rule<scannerT> const & start() const { return route_p; }
+  };
+};
+
+route_parser const route_p;
 
 #endif // POSTMASTER_PARSER_HPP_INCLUDED

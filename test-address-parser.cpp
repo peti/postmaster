@@ -47,3 +47,38 @@ BOOST_AUTO_TEST_CASE( test_rfc2821_address_parser )
     BOOST_CHECK_EQUAL(addr.second, c.host);
   }
 }
+
+
+
+// BOOST_AUTO_TEST_CASE( test_route_parser_grammar )
+// {
+//   using namespace std;
+//   using namespace boost::spirit;
+//   using namespace phoenix;
+//
+// > How can I append strings to val.second? Accessing the member per
+// > se works using a binder:
+//
+// I'd write a phoenix::function that accesses the /first/ and
+// /second/. So, then you can write:
+//
+//     second(top.val) = construct_<address_list>()
+//
+// then:
+//
+//     push_back(second(top.val), some_val)
+//
+// HTH,
+// --
+// Joel de Guzman
+// http://www.boost-consulting.com
+// http://spirit.sf.net
+//
+//
+// -------------------------------------------------------------------------
+// This SF.net email is sponsored by DB2 Express
+// Download DB2 Express C - the FREE version of DB2 express and take
+// control of your XML. No limits. Just data. Click to get it now.
+// http://sourceforge.net/powerbar/db2/
+//
+// }
