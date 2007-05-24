@@ -81,11 +81,11 @@ struct address_pattern_parser : public spirit::grammar<address_pattern_parser, a
       using namespace rfc2822;
 
       addr_pattern
-        =  (  ch_p('@') >> domain_p  [ second(self.val) = arg1 ]
-           |  address_p              [ self.val = arg1 ]
-           |  local_part_p           [ first(self.val)  = arg1 ] >> !ch_p('@')
-           )
-        ;
+        = lexeme_d
+        [  ch_p('@') >> domain_p  [ second(self.val) = arg1 ]
+        |  address_p              [ self.val = arg1 ]
+        |  local_part_p           [ first(self.val)  = arg1 ] >> !ch_p('@')
+        ];
 
       BOOST_SPIRIT_DEBUG_NODE(addr_pattern);
     }
@@ -187,14 +187,12 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
       route_p =
         (
           lhs_p
-            =  lexeme_d[ address_pattern_p [ first(self.val) = arg1 ]  |  ch_p('@') ]
+            =  ( address_pattern_p [ first(self.val) = arg1 ]  |  ch_p('@') )
             >> list_p(rhs_p, ',')
 
         , rhs_p
-            = lexeme_d
-            [  target_p            [ push_back(second(self.val), arg1) ]
+            =  target_p            [ push_back(second(self.val), arg1) ]
             |  address_pattern_p   [ push_back(second(self.val), arg1) ]
-            ]
         );
 
       BOOST_SPIRIT_DEBUG_NODE(route_p);
