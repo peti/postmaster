@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE( test_multi_mapping_parser )
   BOOST_FOREACH( char const * input, suite )
   {
     cout << "parse '" << input << "' ... " << endl;
-      bool const full_hit( parse(rt, input) );
+    bool const full_hit( parse(rt, input) );
     BOOST_CHECK(full_hit);
     print_test_result(rt);
     BOOST_CHECK_EQUAL(rt.second.size(), 3u);
