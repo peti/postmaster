@@ -24,127 +24,10 @@
 
 namespace spirit = boost::spirit ;
 
-struct address_closure : public spirit::closure<address_closure, address>
-{
-  member1 val;
-};
+// ----- Helper Macros
 
 #define PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(NAME) \
   PP_PHOENIX_DEFINE_TRIVIAL_RECORD_ACCESSOR(NAME, typename Record::NAME ## _type &)
-
-PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(first);
-PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(second);
-
-struct address_parser : public spirit::grammar<address_parser, address_closure::context_t>
-{
-  address_parser() { }
-
-  template<typename scannerT>
-  struct definition
-  {
-    spirit::rule<scannerT> addr;
-
-    definition(address_parser const & self)
-    {
-      using namespace boost::spirit;
-      using namespace phoenix;
-      using namespace rfc2822;
-
-      addr
-        = local_part_p [first(self.val) = arg1]
-          >> ch_p('@')
-          >> domain_p  [second(self.val) = arg1]
-        ;
-
-      BOOST_SPIRIT_DEBUG_NODE(addr);
-    }
-
-    spirit::rule<scannerT> const & start() const { return addr; }
-  };
-};
-
-address_parser const address_p;
-
-struct address_pattern_parser : public spirit::grammar<address_pattern_parser, address_closure::context_t>
-{
-  address_pattern_parser() { }
-
-  template<typename scannerT>
-  struct definition
-  {
-    spirit::rule<scannerT> addr_pattern;
-
-    definition(address_pattern_parser const & self)
-    {
-      using namespace boost::spirit;
-      using namespace phoenix;
-      using namespace rfc2822;
-
-      addr_pattern
-        = lexeme_d
-        [  ch_p('@') >> domain_p  [ second(self.val) = arg1 ]
-        |  address_p              [ self.val = arg1 ]
-        |  local_part_p           [ first(self.val)  = arg1 ] >> !ch_p('@')
-        ];
-
-      BOOST_SPIRIT_DEBUG_NODE(addr_pattern);
-    }
-
-    spirit::rule<scannerT> const & start() const { return addr_pattern; }
-  };
-};
-
-address_pattern_parser const address_pattern_p;
-
-struct target_parser : public spirit::grammar<target_parser, address_closure::context_t>
-{
-  target_parser() { }
-
-  struct target_id : public string
-  {
-    template <class Iterator>
-    target_id(Iterator b, Iterator e)
-    {
-      string::push_back('<');
-      string::insert(string::end(), b, e);
-      string::push_back('>');
-    };
-  };
-
-  struct target_parameter : public string
-  {
-    template <class Iterator>
-    target_parameter(Iterator b, Iterator e) : string(++b, --e) { }
-  };
-
-  template<typename scannerT>
-  struct definition
-  {
-    spirit::rule<scannerT> target;
-
-    definition(target_parser const & self)
-    {
-      using namespace boost::spirit;
-      using namespace phoenix;
-      using namespace rfc2822;
-
-      target
-        = word_p                            [ first(self.val)  = construct_<target_id>(arg1, arg2) ]
-          >> confix_p('(', *anychar_p, ')') [ second(self.val) = construct_<target_parameter>(arg1, arg2) ]
-        ;
-      BOOST_SPIRIT_DEBUG_NODE(target);
-    }
-
-    spirit::rule<scannerT> const & start() const { return target; }
-  };
-};
-
-target_parser const target_p;
-
-struct route_closure : public spirit::closure<route_closure, route>
-{
-  member1 val;
-};
 
 #define PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, TYPE, METHOD)      \
   struct NAME ## _impl                                          \
@@ -165,7 +48,90 @@ struct route_closure : public spirit::closure<route_closure, route>
 #define PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(NAME) \
    PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, void, NAME)
 
-PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(push_back);
+#define PP_SPIRIT_DEFINE_CLOSURE(NAME)                                          \
+  struct NAME ## _closure : public spirit::closure<NAME ## _closure, NAME>      \
+  {                                                                             \
+    member1 val;                                                                \
+  }
+
+#define PP_SPIRIT_DEFINE_GRAMMAR(NAME, CLOSURE, GRAMMAR)                        \
+  struct NAME ## _parser                                                        \
+  : public spirit::grammar<NAME ## _parser, CLOSURE::context_t>                 \
+  {                                                                             \
+    NAME ## _parser() { }                                                       \
+                                                                                \
+    template<typename scannerT>                                                 \
+    struct definition                                                           \
+    {                                                                           \
+      spirit::rule<scannerT>    NAME;                                           \
+                                                                                \
+      definition(NAME ## _parser const & self)                                  \
+      {                                                                         \
+        using namespace spirit;                                                 \
+        using namespace phoenix;                                                \
+        using namespace rfc2822;                                                \
+        NAME = GRAMMAR;                                                         \
+        BOOST_SPIRIT_DEBUG_NODE(NAME);                                          \
+      }                                                                         \
+                                                                                \
+      spirit::rule<scannerT> const & start() const { return NAME; }             \
+    };                                                                          \
+  };                                                                            \
+  NAME ## _parser const NAME ## _p
+
+#define PP_SPIRIT_DEFINE_PARSER(NAME, GRAMMAR)                                  \
+  PP_SPIRIT_DEFINE_CLOSURE(NAME);                                               \
+  PP_SPIRIT_DEFINE_GRAMMAR(NAME, NAME ## _closure, GRAMMAR)
+
+// ----- Lazy helper functions for use in actions
+
+PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(first);             // lazy access to pairs
+PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(second);
+PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(push_back);   // lazy access to std::vector
+
+// ----- Parsers
+
+PP_SPIRIT_DEFINE_PARSER
+  ( address
+  ,   local_part_p              [first(self.val) = arg1]
+  >>  ch_p('@')
+  >>  domain_p                  [second(self.val) = arg1]
+  );
+
+PP_SPIRIT_DEFINE_PARSER
+  ( pattern
+  , lexeme_d
+  [   ch_p('@') >> domain_p     [ second(self.val) = arg1 ]
+  |   address_p                 [ self.val = arg1 ]
+  |   local_part_p              [ first(self.val)  = arg1 ] >> !ch_p('@')
+  ]);
+
+struct target_id : public string
+{
+  target_id() { }
+
+  template <class Iterator>
+  target_id(Iterator b, Iterator e)
+  {
+    string::push_back('<');
+    string::insert(string::end(), b, e);
+    string::push_back('>');
+  };
+};
+
+struct target_parameter : public string
+{
+  template <class Iterator>
+  target_parameter(Iterator b, Iterator e) : string(++b, --e) { }
+};
+
+PP_SPIRIT_DEFINE_PARSER
+  ( target
+  ,   word_p                         [ first(self.val) = construct_<target_id>(arg1, arg2) ]
+  >>  confix_p('(', *anychar_p, ')') [ second(self.val) = construct_<target_parameter>(arg1, arg2) ]
+  );
+
+PP_SPIRIT_DEFINE_CLOSURE(route);
 
 struct route_parser : public spirit::grammar<route_parser, route_closure::context_t>
 {
@@ -182,17 +148,16 @@ struct route_parser : public spirit::grammar<route_parser, route_closure::contex
     {
       using namespace boost::spirit;
       using namespace phoenix;
-      using namespace rfc2822;
 
       route_p =
         (
           lhs_p
-            =  ( address_pattern_p [ first(self.val) = arg1 ]  |  ch_p('@') )
+            =  ( pattern_p [ first(self.val) = arg1 ]  |  ch_p('@') )
             >> list_p(rhs_p, ',')
 
         , rhs_p
-            =  target_p            [ push_back(second(self.val), arg1) ]
-            |  address_pattern_p   [ push_back(second(self.val), arg1) ]
+            =   target_p       [ push_back(second(self.val), arg1) ]
+            |   pattern_p      [ push_back(second(self.val), arg1) ]
         );
 
       BOOST_SPIRIT_DEBUG_NODE(route_p);
