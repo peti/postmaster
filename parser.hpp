@@ -108,8 +108,6 @@ PP_SPIRIT_DEFINE_PARSER
 
 struct target_id : public string
 {
-  target_id() { }
-
   template <class Iterator>
   target_id(Iterator b, Iterator e)
   {
