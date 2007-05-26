@@ -18,7 +18,9 @@ lib pm_routing : routing.cpp : <use>/boost ;
 
 lib pm_target  : target.cpp  : <use>/boost ;
 
-exe hook : hook.cpp pm_error : <use>/boost ;
+exe hook : hook.cpp pm_error /ioxx//ioxx_probe_poll ;
+
+exe timeout : timeout.cpp pm_error ;
 
 test-suite postmaster_tests
   : [ run test-address-parser.cpp               /boost//unit_test_framework ]

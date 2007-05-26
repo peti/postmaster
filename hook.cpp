@@ -11,6 +11,7 @@
  */
 
 #include "postmaster.hpp"
+#include "ioxx/probe.hpp"
 #include <sstream>
 #include <boost/noncopyable.hpp>
 #include <boost/compatibility/cpp_c_headers/cerrno>
@@ -23,7 +24,6 @@
 
 #include <boost/test/included/prg_exec_monitor.hpp>
 #include <boost/scoped_ptr.hpp>
-#include <iostream>
 
 using namespace std;
 
@@ -197,27 +197,60 @@ static std::ostream & print_child_rc_t(std::ostream & os, rc_t status)
     ;
 }
 
+struct async_hook : public ioxx::probe::socket
+{
+  hook          _hook;
+  string        _inbuf;
+
+  async_hook(char const * cmd, char ** argv, char ** env = 0) : _hook(cmd, argv, env)
+  {
+  }
+  bool input_blocked(read_fd_t const & fin) const
+  {
+  }
+  bool output_blocked(write_fd_t const & fout) const
+  {
+  }
+  void unblock_input(ioxx::probe & p, ioxx::weak_socket const & fin)
+  {
+  }
+  void unblock_output(ioxx::probe & p, write_fd_t const & fout)
+  {
+  }
+  void shutdown(ioxx::probe & p, fd_t const & fd)
+  {
+  }
+};
+
+
 int cpp_main(int, char ** argv)
 {
+  using namespace boost;
+
+  // create i/o dispatcher
+  scoped_ptr<ioxx::probe> probe( ioxx::make_probe() );
+
+  // start hook
   char const * user_env[] = { "TERM=dumb", 0 };
-  boost::scoped_ptr<hook> f( new hook(*(++argv), argv, (char**)user_env) );
+  async_hook::pointer f( new async_hook( *(++argv), argv, (char**)user_env) );
+  probe.insert(STDIN_FILENO, f);
 
-  ostringstream strbuf;
-  slurp(STDIN_FILENO, strbuf);
-  string const & buf( strbuf.str() );
-  cout << "pipe " << buf.size() << " bytes from stdin" << endl;
-  write(f->_in, buf.c_str(), buf.size());
-
-  rc_t status( f->commit() );
-  print_child_rc_t(cout, status) << endl;
-
-  cout << "*** output follows ..." << endl;
-  slurp(f->_out, cout);
-  cout << endl;
-
-  cout << "*** errors follow ..." << endl;
-  slurp(f->_err, cout);
-  cout << endl;
+//   ostringstream strbuf;
+//   slurp(STDIN_FILENO, strbuf);
+//   string const & buf( strbuf.str() );
+//   cout << "pipe " << buf.size() << " bytes from stdin" << endl;
+//   write(f->_in, buf.c_str(), buf.size());
+//
+//   rc_t status( f->commit() );
+//   print_child_rc_t(cout, status) << endl;
+//
+//   cout << "*** output follows ..." << endl;
+//   slurp(f->_out, cout);
+//   cout << endl;
+//
+//   cout << "*** errors follow ..." << endl;
+//   slurp(f->_err, cout);
+//   cout << endl;
 
   return 0;
 }
