@@ -11,6 +11,7 @@
  */
 
 #include "postmaster.hpp"
+#include <sstream>
 #include <boost/noncopyable.hpp>
 #include <boost/compatibility/cpp_c_headers/cerrno>
 #include <boost/compatibility/cpp_c_headers/csignal>
@@ -20,6 +21,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <boost/test/included/prg_exec_monitor.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <iostream>
 
@@ -84,6 +86,7 @@ struct hook : private boost::noncopyable
   : _id(cmd), _in(-1), _out(-1), _err(-1), _pid(-1)
   {
     BOOST_ASSERT(cmd);
+    char ** const my_env( environ );
 
     char const * what( "impossible failure in hook construction" );
 
@@ -91,43 +94,39 @@ struct hook : private boost::noncopyable
     write_fd_t child_out( -1 );
     write_fd_t child_err( -1 );
 
-    if (  !(make_pipe(child_in, _in)   /* && set_blocking(_in,  false) */)
-       || !(make_pipe(_out, child_out) /* && set_blocking(_out, false) */)
-       || !(make_pipe(_err, child_err) /* && set_blocking(_err, false) */)
+    if (  !(make_pipe(child_in, _in)   && set_blocking(_in,  true)) /// \todo Hmm.
+       || !(make_pipe(_out, child_out) && set_blocking(_out, true))
+       || !(make_pipe(_err, child_err) && set_blocking(_err, true))
        )
     {
       what = "failed to create pipe to sub-process";
       goto error_exit;
     }
 
-    char ** my_env( environ );
-    environ = env;
-
     _pid = fork();
     switch(_pid)
     {
-      case 0:                   // Child: close parent's end of the pipes
-        kill();                 // and use our ends for stdio.
+      case 0:                   // Child: Set designated environment for
+        environ = env;          // upcoming exec(). Then close parent's end of
+        kill();                 // the pipes and use our ends for stdio.
         if (  dup2(child_in,  STDIN_FILENO)  != STDIN_FILENO
            || dup2(child_out, STDOUT_FILENO) != STDOUT_FILENO
            || dup2(child_err, STDERR_FILENO) != STDERR_FILENO
            )
         {
-          MSG_ERROR("sub-process '" << cmd << "' cannot use pipes: " << system_error().what());
+          what = "cannot use pipes";
           goto error_exit;
         }
         release(child_in); release(child_out); release(child_err);
         execv(cmd, argv);
-        MSG_ERROR("sub-process cannot execute '" << cmd << "': " << system_error().what());
+        what = "cannot execute";
         goto error_exit;
 
       case -1:                  // Error.
-        environ = my_env;
         what = "cannot fork";
         goto error_exit;
 
       default:                  // Child spawned successfully.
-        environ = my_env;
         release(child_in); release(child_out); release(child_err);
         return;
     }
@@ -135,8 +134,10 @@ struct hook : private boost::noncopyable
   error_exit:
     release(child_in); release(child_out); release(child_err);
     kill();
-    if (environ == my_env)      throw system_error(string("hook '") + _id + "' " + what);
-    else                        exit(1);
+    system_error err( string("hook '") + _id + "' " + what );
+    if (environ == my_env) throw err;
+    MSG_ERROR("sub " << err.what());
+    exit(1);
   }
 
   ~hook()
@@ -188,9 +189,16 @@ bool slurp(read_fd_t fd, std::ostream & os)
   }
 }
 
-int main(int, char ** argv)
+int cpp_main(int, char ** argv)
 {
-  boost::scoped_ptr<hook> f( new hook(*(++argv), argv) );
+  char const * user_env[] = { "TERM=dumb", 0 };
+  boost::scoped_ptr<hook> f( new hook(*(++argv), argv, (char**)user_env) );
+  ostringstream strbuf;
+  slurp(STDIN_FILENO, strbuf);
+  string const & buf( strbuf.str() );
+  cout << "read " << buf.size() << " bytes from stdin" << endl;
+  write(f->_in, buf.c_str(), buf.size());
+
   rc_t const status( f->commit() );
   if (WIFEXITED(status))
   {
