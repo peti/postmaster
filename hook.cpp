@@ -45,15 +45,14 @@ static void release(fd_t & fd)
   fd = -1;
 }
 
-static rc_t release_pid(pid_t & pid)
+static void release_pid(pid_t & pid)
 {
-  if (pid == 0 || pid == -1) return pid;
+  if (pid == 0 || pid == -1) return;
   BOOST_ASSERT(pid > 0);
   kill(pid, SIGTERM);
-  int status;
+  rc_t status;
   waitpid(pid, &status, 0);
   pid = -1;
-  return status;
 }
 
 static bool set_blocking(fd_t fd, bool enable)
@@ -145,24 +144,21 @@ struct hook : private boost::noncopyable
     kill();
   }
 
-  rc_t kill()
+  void kill()
   {
     release(_in); release(_out); release(_err);
-    return release_pid(_pid);
+    release_pid(_pid);
   }
 
   rc_t commit()
   {
     release(_in);
-    if (_pid != 0 && _pid != -1)
-    {
-      rc_t status;
-      waitpid(_pid, &status, 0);
-      _pid = -1;
-      return status;
-    }
-    else
-      return _pid;
+    BOOST_ASSERT(_pid != 0 && _pid != -1);
+    rc_t status;
+    if (waitpid(_pid, &status, 0) == -1)
+      throw system_error("cannot commit hook");
+    _pid = -1;
+    return status;
   }
 };
 
@@ -189,30 +185,31 @@ bool slurp(read_fd_t fd, std::ostream & os)
   }
 }
 
-int cpp_main(int, char ** argv)
+static std::ostream & print_child_rc_t(std::ostream & os, rc_t status)
 {
-  char const * user_env[] = { "TERM=dumb", 0 };
-  boost::scoped_ptr<hook> f( new hook(*(++argv), argv, (char**)user_env) );
-  ostringstream strbuf;
-  slurp(STDIN_FILENO, strbuf);
-  string const & buf( strbuf.str() );
-  cout << "read " << buf.size() << " bytes from stdin" << endl;
-  write(f->_in, buf.c_str(), buf.size());
-
-  rc_t const status( f->commit() );
-  if (WIFEXITED(status))
-  {
-    cout << "hook returned status " << WEXITSTATUS(status) << endl;
-  }
-  else
-  {
-    cout << "hook "
+  return WIFEXITED(status)
+    ? os << "hook returned status " << WEXITSTATUS(status)
+    : os << "hook "
          << ( WIFSIGNALED(status) ? "received a signal"
             : WCOREDUMP(status)   ? "dumped core"
             : "was terminated for whatever OS-specific reason"
             )
-         << endl;
-  }
+    ;
+}
+
+int cpp_main(int, char ** argv)
+{
+  char const * user_env[] = { "TERM=dumb", 0 };
+  boost::scoped_ptr<hook> f( new hook(*(++argv), argv, (char**)user_env) );
+
+  ostringstream strbuf;
+  slurp(STDIN_FILENO, strbuf);
+  string const & buf( strbuf.str() );
+  cout << "pipe " << buf.size() << " bytes from stdin" << endl;
+  write(f->_in, buf.c_str(), buf.size());
+
+  rc_t status( f->commit() );
+  print_child_rc_t(cout, status) << endl;
 
   cout << "*** output follows ..." << endl;
   slurp(f->_out, cout);
