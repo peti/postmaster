@@ -114,7 +114,7 @@ struct target_id : public string
     string::push_back('<');
     string::insert(string::end(), b, e);
     string::push_back('>');
-  };
+  }
 };
 
 struct target_parameter : public string
