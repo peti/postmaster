@@ -12,6 +12,7 @@
 
 #include "postmaster.hpp"
 #include "ioxx/probe.hpp"
+#include "ioxx/timeout.hpp"
 #include <sstream>
 #include <boost/noncopyable.hpp>
 #include <boost/compatibility/cpp_c_headers/cerrno>
@@ -200,28 +201,29 @@ static std::ostream & print_child_rc_t(std::ostream & os, rc_t status)
 struct async_hook : public ioxx::probe::socket
 {
   hook          _hook;
-  string        _inbuf;
+
+  typedef boost::shared_ptr<async_hook> pointer;
 
   async_hook(char const * cmd, char ** argv, char ** env = 0) : _hook(cmd, argv, env)
   {
   }
-  bool input_blocked(read_fd_t const & fin) const
+  bool input_blocked(read_fd_t fin) const
   {
     throw logic_error("not implemented");
   }
-  bool output_blocked(write_fd_t const & fout) const
+  bool output_blocked(write_fd_t fout) const
   {
     throw logic_error("not implemented");
   }
-  void unblock_input(ioxx::probe & p, ioxx::weak_socket const & fin)
+  void unblock_input(ioxx::probe & p, read_fd_t fin)
   {
     throw logic_error("not implemented");
   }
-  void unblock_output(ioxx::probe & p, write_fd_t const & fout)
+  void unblock_output(ioxx::probe & p, write_fd_t fout)
   {
     throw logic_error("not implemented");
   }
-  void shutdown(ioxx::probe & p, fd_t const & fd)
+  void shutdown(ioxx::probe & p, fd_t fd)
   {
     throw logic_error("not implemented");
   }
@@ -234,11 +236,29 @@ int cpp_main(int, char ** argv)
 
   // create i/o dispatcher
   scoped_ptr<ioxx::probe> probe( ioxx::make_probe() );
+  ioxx::timeout timer;
 
   // start hook
-  char const * user_env[] = { "TERM=dumb", 0 };
-  async_hook::pointer f( new async_hook( *(++argv), argv, (char**)user_env) );
-  probe->insert(STDIN_FILENO, f);
+  {
+    char const * user_env[] = { "TERM=dumb", 0 };
+    async_hook::pointer f( new async_hook( *(++argv), argv, (char**)user_env) );
+    probe->insert(STDIN_FILENO, f);
+    probe->insert(STDOUT_FILENO, f);
+    probe->insert(STDERR_FILENO, f);
+    probe->insert(f->_hook._in, f);
+    probe->insert(f->_hook._out, f);
+    probe->insert(f->_hook._err, f);
+  }
+
+  // run i/o loop
+  for(;;)
+  {
+    ioxx::second_t idle_time;
+    timer.deliver(&idle_time);
+    if (probe->empty()) break;
+    if (probe->run_once(timer.empty() ? -1 : static_cast<int>(idle_time)) == 0u)
+      cout << "probe timeout" << endl;
+  }
 
 //   ostringstream strbuf;
 //   slurp(STDIN_FILENO, strbuf);
