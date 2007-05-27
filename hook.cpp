@@ -207,18 +207,23 @@ struct async_hook : public ioxx::probe::socket
   }
   bool input_blocked(read_fd_t const & fin) const
   {
+    throw logic_error("not implemented");
   }
   bool output_blocked(write_fd_t const & fout) const
   {
+    throw logic_error("not implemented");
   }
   void unblock_input(ioxx::probe & p, ioxx::weak_socket const & fin)
   {
+    throw logic_error("not implemented");
   }
   void unblock_output(ioxx::probe & p, write_fd_t const & fout)
   {
+    throw logic_error("not implemented");
   }
   void shutdown(ioxx::probe & p, fd_t const & fd)
   {
+    throw logic_error("not implemented");
   }
 };
 
@@ -233,7 +238,7 @@ int cpp_main(int, char ** argv)
   // start hook
   char const * user_env[] = { "TERM=dumb", 0 };
   async_hook::pointer f( new async_hook( *(++argv), argv, (char**)user_env) );
-  probe.insert(STDIN_FILENO, f);
+  probe->insert(STDIN_FILENO, f);
 
 //   ostringstream strbuf;
 //   slurp(STDIN_FILENO, strbuf);
