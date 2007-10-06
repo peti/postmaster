@@ -10,9 +10,7 @@
 
    The Postmaster ESMTP Server. See
    <http://postmaster.cryp.to/docs/tutorial.html> for an
-   introduction. If there is something that appears to be
-   impossible to do without modifying the core modules,
-   please complain loudly to <mailto:postmaster-dev@lists.cryp.to>.
+   introduction.
  -}
 
 module Postmaster
