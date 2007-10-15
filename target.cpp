@@ -177,22 +177,22 @@ target_ptr pipe_target(char const * cmd)
   if (rc == -1)
   {
     MSG_ERROR("cannot obtain flags from pipe '" << cmd << "': " << system_error().what());
-    goto error_exit;
+    goto no_nonblocking_pipe;
   }
   rc |= O_NONBLOCK;
   rc = fcntl(write_fd, F_SETFL, rc);
   if (rc == -1)
   {
     MSG_ERROR("cannot set flags for pipe '" << cmd << "': " << system_error().what());
-    goto error_exit;
+    goto no_nonblocking_pipe;
   }
 
   return target_ptr( new child_target(child_pid, cmd, write_fd) );
 
-error_exit:
+no_nonblocking_pipe:
   release(cmd, read_fd);
   kill(child_pid, SIGTERM);
   int status;
   waitpid(child_pid, &status, 0);
-  return target_ptr();
+  throw runtime_error("failed to switch pipe into non-blocking mode");
 }

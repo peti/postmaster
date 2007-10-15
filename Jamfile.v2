@@ -14,16 +14,19 @@ lib pm_error
   : <library>/boost//system
   ;
 
-lib pm_routing : routing.cpp : <use>/boost ;
+lib pm_routing
+  : routing.cpp
+  : <use>/boost <library>/rfc2822//rfc2822
+  ;
 
 lib pm_target  : target.cpp  : <use>/boost ;
 
-exe hook : hook.cpp pm_error /ioxx//ioxx ;
+exe hook : hook.cpp pm_error : <library>/ioxx//ioxx ;
 
 exe timeout : timeout.cpp pm_error ;
 
 test-suite postmaster_tests
-  : [ run test-address-parser.cpp               /boost//unit_test_framework ]
+  : [ run test-address-parser.cpp               /boost//unit_test_framework /rfc2822//rfc2822 ]
     [ run test-nocase-string.cpp                /boost//unit_test_framework ]
     [ run test-route-parser.cpp pm_routing      /boost//unit_test_framework ]
     [ run test-pattern-matching.cpp pm_routing  /boost//unit_test_framework ]

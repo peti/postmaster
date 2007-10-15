@@ -198,7 +198,7 @@ static std::ostream & print_child_rc_t(std::ostream & os, rc_t status)
     ;
 }
 
-struct async_hook : public ioxx::probe::socket
+struct async_hook : public ioxx::socket
 {
   hook          _hook;
 
@@ -215,15 +215,15 @@ struct async_hook : public ioxx::probe::socket
   {
     throw logic_error("not implemented");
   }
-  void unblock_input(ioxx::probe & p, read_fd_t fin)
+  void unblock_input(ioxx::socket::probe & p, read_fd_t fin)
   {
     throw logic_error("not implemented");
   }
-  void unblock_output(ioxx::probe & p, write_fd_t fout)
+  void unblock_output(ioxx::socket::probe & p, write_fd_t fout)
   {
     throw logic_error("not implemented");
   }
-  void shutdown(ioxx::probe & p, fd_t fd)
+  void shutdown(ioxx::socket::probe & p, fd_t fd)
   {
     throw logic_error("not implemented");
   }
@@ -235,7 +235,7 @@ int cpp_main(int, char ** argv)
   using namespace boost;
 
   // create i/o dispatcher
-  scoped_ptr<ioxx::probe> probe( ioxx::make_probe() );
+  scoped_ptr<ioxx::socket::probe> probe( ioxx::socket::probe::make() );
   ioxx::timeout timer;
 
   // start hook
