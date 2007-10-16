@@ -11,17 +11,18 @@
  */
 
 #include "postmaster.hpp"
+#include "target.hpp"
 #include "ioxx/probe.hpp"
 #include "ioxx/timeout.hpp"
 #include <sstream>
-#include <boost/noncopyable.hpp>
 #include <boost/compatibility/cpp_c_headers/cerrno>
-#include <boost/compatibility/cpp_c_headers/csignal>
+#include <boost/bind.hpp>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #include <boost/test/included/prg_exec_monitor.hpp>
 #include <boost/scoped_ptr.hpp>
@@ -46,23 +47,12 @@ static void release(fd_t & fd)
   fd = -1;
 }
 
-static void release_pid(pid_t & pid)
-{
-  if (pid == 0 || pid == -1) return;
-  BOOST_ASSERT(pid > 0);
-  kill(pid, SIGTERM);
-  rc_t status;
-  waitpid(pid, &status, 0);
-  pid = -1;
-}
-
 static bool set_blocking(fd_t fd, bool enable)
 {
-  int rc( fcntl(fd, F_GETFL, 0) );
-  if (rc == -1) return false;
-  rc = enable ? (rc | O_NONBLOCK) : (rc & ~O_NONBLOCK);
-  rc = fcntl(fd, F_SETFL, rc);
-  return rc != -1;
+  int const flags( fcntl(fd, F_GETFL, 0) );
+  if (flags == -1) return false;
+  int const new_flags( enable ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK) );
+  return flags == new_flags ? true : fcntl(fd, F_SETFL, new_flags) != -1;
 }
 
 static bool make_pipe(read_fd_t & rend, write_fd_t & wend)
@@ -72,6 +62,18 @@ static bool make_pipe(read_fd_t & rend, write_fd_t & wend)
   rend = fds[0];
   wend = fds[1];
   return true;
+}
+
+static std::ostream & print_child_rc_t(std::ostream & os, rc_t status)
+{
+  return WIFEXITED(status)
+    ? os << "hook returned status " << WEXITSTATUS(status)
+    : os << "hook "
+         << ( WIFSIGNALED(status) ? "received a signal"
+            : WCOREDUMP(status)   ? "dumped core"
+            : "was terminated for whatever OS-specific reason"
+            )
+    ;
 }
 
 struct hook : private boost::noncopyable
@@ -148,30 +150,43 @@ struct hook : private boost::noncopyable
   void kill()
   {
     release(_in); release(_out); release(_err);
-    release_pid(_pid);
+    if (_pid > 0)
+    {
+      if (::kill(_pid, SIGKILL) == 0) // TODO: handle EINTR
+      {
+        rc_t status;
+        waitpid(_pid, &status, 0);
+      }
+      _pid = -1;
+    }
   }
 
-  rc_t commit()
+  void commit()
   {
     release(_in);
-    BOOST_ASSERT(_pid != 0 && _pid != -1);
+    BOOST_ASSERT(_pid > 0);
     rc_t status;
     if (waitpid(_pid, &status, 0) == -1)
-      throw system_error("cannot commit hook");
+      throw system_error(string("cannot commit hook ") + _id);
     _pid = -1;
-    return status;
+    if (status != 0)
+    {
+      ostringstream strbuf;
+      strbuf << "target " << _id << ": ";
+      print_child_rc_t(strbuf, status);
+      throw runtime_error(strbuf.str());
+    }
+  }
+
+  void feed(char const * b, char const * e)
+  {
+    BOOST_ASSERT(b < e);
+    size_t len( e - b );
+    ssize_t const rc( write(_in, b, len) );
+    if (rc <= 0)           throw system_error(string("feeding hook '") + _id + "' failed");
+    if (size_t(rc) != len) throw logic_error(string("unexpected short write on hook '") + _id + "'");
   }
 };
-
-// void feed(char const * b, char const * e)
-// {
-//   BOOST_ASSERT(_id >= 0);
-//   BOOST_ASSERT(b < e);
-//   size_t len( e - b );
-//   ssize_t const rc( write(_fd, b, len) );
-//   if (rc <= 0)           throw system_error(string("feeding target '") + _id + "' failed");
-//   if (size_t(rc) != len) throw logic_error(string("unexpected short write on target '") + _id + "'");
-// }
 
 bool slurp(read_fd_t fd, std::ostream & os)
 {
@@ -186,18 +201,6 @@ bool slurp(read_fd_t fd, std::ostream & os)
   }
 }
 
-static std::ostream & print_child_rc_t(std::ostream & os, rc_t status)
-{
-  return WIFEXITED(status)
-    ? os << "hook returned status " << WEXITSTATUS(status)
-    : os << "hook "
-         << ( WIFSIGNALED(status) ? "received a signal"
-            : WCOREDUMP(status)   ? "dumped core"
-            : "was terminated for whatever OS-specific reason"
-            )
-    ;
-}
-
 struct async_hook : public ioxx::socket
 {
   hook          _hook;
@@ -209,23 +212,30 @@ struct async_hook : public ioxx::socket
   }
   bool input_blocked(read_fd_t fin) const
   {
-    throw logic_error("not implemented");
+    return ioxx::is_valid_weak_socket(_hook._in);
   }
   bool output_blocked(write_fd_t fout) const
   {
-    throw logic_error("not implemented");
+    return false;
   }
   void unblock_input(ioxx::socket::probe & p, read_fd_t fin)
   {
-    throw logic_error("not implemented");
+    throw logic_error("unblock_input not implemented");
   }
   void unblock_output(ioxx::socket::probe & p, write_fd_t fout)
   {
-    throw logic_error("not implemented");
+    throw logic_error("unblock_output not implemented");
   }
   void shutdown(ioxx::socket::probe & p, fd_t fd)
   {
-    throw logic_error("not implemented");
+    shutdown(p);
+  }
+  void shutdown(ioxx::socket::probe & p)
+  {
+    p.remove(_hook._in);  p.remove(STDIN_FILENO);
+    p.remove(_hook._out); p.remove(STDOUT_FILENO);
+    p.remove(_hook._err); p.remove(STDERR_FILENO);
+    _hook.kill();
   }
 };
 
@@ -241,13 +251,16 @@ int cpp_main(int, char ** argv)
   // start hook
   {
     char const * user_env[] = { "TERM=dumb", 0 };
-    async_hook::pointer f( new async_hook( *(++argv), argv, (char**)user_env) );
+    // The cast is dubious but probably safe based on the assumption that the
+    // hook doesn't use that environment for anything but passing it to exec().
+    async_hook::pointer f( new async_hook( *(++argv), argv, const_cast<char**>(user_env)) );
     probe->insert(STDIN_FILENO, f);
     probe->insert(STDOUT_FILENO, f);
     probe->insert(STDERR_FILENO, f);
     probe->insert(f->_hook._in, f);
     probe->insert(f->_hook._out, f);
     probe->insert(f->_hook._err, f);
+    timer.in(5u, boost::bind<void>(&async_hook::shutdown, f, boost::ref(*probe)));
   }
 
   // run i/o loop
