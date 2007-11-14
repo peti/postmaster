@@ -11,10 +11,10 @@
  */
 
 #include "parser.hpp"
+#include <boost/foreach.hpp>
 
 #define BOOST_AUTO_TEST_MAIN
-#include <boost/test/auto_unit_test.hpp>
-#include <boost/foreach.hpp>
+#include <boost/test/unit_test.hpp>
 
 struct address_test_case
 {
