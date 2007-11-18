@@ -22,12 +22,12 @@ int main(int, char**)
 
   scheduler io;
   {
-    socket sin( create_socket(io, STDIN_FILENO) ); sin->close_on_destruction(false);
-    socket sout( create_socket(io, STDOUT_FILENO) ); sout->close_on_destruction(false);
+    socket sin( create_socket(io, STDIN_FILENO) );   close_on_destruction(sin, false);
+    socket sout( create_socket(io, STDOUT_FILENO) ); close_on_destruction(sout, false);
     cout << "standard input  = socket " << sin << endl
          << "standard output = socket " << sout << endl;
-    on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, _1));
-    on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, _1));
+    on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, sin));
+    on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, sout));
   }
 
   io.schedule(bind(print_id, 3u), 1u);

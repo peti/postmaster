@@ -199,15 +199,13 @@ namespace postmaster
     class system_socket : private boost::noncopyable
     {
     public:
-      typedef boost::function1<void, socket> handler;
+      typedef scheduler::task handler;
 
       ~system_socket()
       {
         _io.unregister_socket(_sock);
         if (_close_on_destruction) ::close(_sock);
       }
-
-      void close_on_destruction(bool b) { _close_on_destruction = b; }
 
       friend socket create_socket(scheduler & io, int fd)
       {
@@ -224,6 +222,11 @@ namespace postmaster
       friend void on_output(socket s, handler f, second_t timeout = 0, handler h = handler())
       {
         s->_output.set<&scheduler::on_output>(s, f, timeout, h);
+      }
+
+      friend void close_on_destruction(socket s, bool b)
+      {
+        s->_close_on_destruction = b;
       }
 
     private:
@@ -271,7 +274,7 @@ namespace postmaster
         {
           system_socket & sock( *s );
           sock._io.cancel(_timeout_id);
-          if (_f) _f(s);
+          if (_f) _f();
           if (_f)
           {
             if (_timeout)
@@ -287,7 +290,7 @@ namespace postmaster
           handler h;
           h.swap(_h);
           set<on_event>(s, handler(), 0, handler());
-          if (h) h(s);
+          if (h) h();
         }
       };
 
