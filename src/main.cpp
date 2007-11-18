@@ -156,7 +156,7 @@ namespace postmaster
         BOOST_ASSERT(_handlers.find(s) != _handlers.end());
         handler & h( _handlers[s] );
         h.second.swap(t);
-        if ( static_cast<bool>(t) != static_cast<bool>(h.first) )
+        if ( static_cast<bool>(t) != static_cast<bool>(h.second) )
           modify_epoll(s, h, "scheduler::on_output() failed");
       }
 
