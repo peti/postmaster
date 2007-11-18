@@ -56,9 +56,13 @@ namespace postmaster
         return std::make_pair(i->first, i);
       }
 
-      void cancel(task_id const & tid)
+      void cancel(task_id & tid)
       {
-        if (tid.first > _now) _tasks.erase(tid.second);
+        if (tid.first > _now)
+        {
+          _tasks.erase(tid.second);
+          tid.first = 0;
+        }
       }
 
       second_t run()
@@ -119,7 +123,7 @@ namespace postmaster
         if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, s, &ev) != 0)
         {
           _handlers.erase(s);
-          throw system_error(errno, errno_ecat, "register_socket: epoll_ctl(2) failed");
+          throw system_error(errno, errno_ecat, "scheduler::register_socket() failed");
         }
       }
 
@@ -133,7 +137,7 @@ namespace postmaster
         ev.data.fd = s;
         ev.events  = 0;
         if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, s, &ev) != 0)
-          throw system_error(errno, errno_ecat, "unregister_socket: epoll_ctl(2) failed");
+          throw system_error(errno, errno_ecat, "scheduler::unregister_socket() failed");
       }
 
       void on_input(socket_id s, task t)
@@ -142,12 +146,8 @@ namespace postmaster
         BOOST_ASSERT(_handlers.find(s) != _handlers.end());
         handler & h( _handlers[s] );
         h.first.swap(t);
-        if ( (t && h.first) || (!t && !h.first) ) return;
-        epoll_event ev;
-        ev.data.fd = s;
-        ev.events  = (h.first ? EPOLLIN : 0) | (h.second ? EPOLLOUT : 0);
-        if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, s, &ev) != 0)
-          throw system_error(errno, errno_ecat, "on_input: epoll_ctl(2) failed");
+        if ( static_cast<bool>(t) != static_cast<bool>(h.first) )
+          modify_epoll(s, h, "scheduler::on_input() failed");
       }
 
       void on_output(socket_id s, task t)
@@ -156,20 +156,22 @@ namespace postmaster
         BOOST_ASSERT(_handlers.find(s) != _handlers.end());
         handler & h( _handlers[s] );
         h.second.swap(t);
-        if ( (t && h.second) || (!t && !h.second) ) return;
-        epoll_event ev;
-        ev.data.fd = s;
-        ev.events  = (h.first ? EPOLLIN : 0) | (h.second ? EPOLLOUT : 0);
-        if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, s, &ev) != 0)
-          throw system_error(errno, errno_ecat, "on_output: epoll_ctl(2) failed");
+        if ( static_cast<bool>(t) != static_cast<bool>(h.first) )
+          modify_epoll(s, h, "scheduler::on_output() failed");
       }
 
     private:
+      typedef std::pair<task,task>        handler;
+      typedef std::map<socket_id,handler> handler_map;
+
+      socket_id         _epoll_fd;
+      handler_map       _handlers;
+
       void run_epoll(int timeout)
       {
         epoll_event ev[32u];
         int const rc( epoll_wait(_epoll_fd, ev, sizeof(ev) / sizeof(epoll_event), timeout) );
-        if (rc < 0) throw system_error(errno, errno_ecat, "run: epoll_wait(2) failed");
+        if (rc < 0) throw system_error(errno, errno_ecat, "scheduler::run_epoll() failed");
         std::cout << rc << " sockets active" << std::endl;
         update();
         for (int i(0); i != rc; ++i)
@@ -182,11 +184,14 @@ namespace postmaster
         }
       }
 
-      typedef std::pair<task,task>        handler;
-      typedef std::map<socket_id,handler> handler_map;
-
-      socket_id         _epoll_fd;
-      handler_map       _handlers;
+      void modify_epoll(socket_id s, handler & h, char const * ctxid)
+      {
+        epoll_event ev;
+        ev.data.fd = s;
+        ev.events  = (h.first ? EPOLLIN : 0) | (h.second ? EPOLLOUT : 0);
+        if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, s, &ev) != 0)
+          throw system_error(errno, errno_ecat, ctxid);
+      }
     };
 
     // Basic I/O interface.
@@ -207,10 +212,6 @@ namespace postmaster
 
       void close_on_destruction(bool b) { _close_on_destruction = b; }
 
-      char * recv(char *, char *);
-      char * send(char *, char *);
-      char const * send(char const *, char const *);
-
       friend socket create_socket(scheduler & io, int fd)
       {
         socket s;
@@ -220,12 +221,12 @@ namespace postmaster
 
       friend void on_input(socket s, handler f, second_t timeout = 0, handler h = handler())
       {
-        s->_input.set(s, f, timeout, h, &scheduler::on_input);
+        s->_input.set<&scheduler::on_input>(s, f, timeout, h);
       }
 
       friend void on_output(socket s, handler f, second_t timeout = 0, handler h = handler())
       {
-        s->_output.set(s, f, timeout, h, &scheduler::on_output);
+        s->_output.set<&scheduler::on_output>(s, f, timeout, h);
       }
 
     private:
@@ -241,73 +242,73 @@ namespace postmaster
 
       typedef void (scheduler::*registrar)(scheduler::socket_id, scheduler::task);
 
-      struct context
+      class context : private boost::noncopyable
       {
-        handler                   f;
-        handler                   h;
-        scheduler::task_id        timeout_id;
-        second_t                  timeout;
-
-        void set(socket s, handler f_, second_t to, handler h_, registrar on_event)
+      public:
+        template <registrar on_event>
+        void set(socket s, handler f, second_t to, handler h)
         {
-          system_socket & self( *s );
-          self._io.cancel(timeout_id);
-          timeout_id = scheduler::task_id();
-          f.swap(f_);
-          h.swap(h_);
-          timeout = to;
-          if (f)
+          system_socket & sock( *s );
+          sock._io.cancel(_timeout_id);
+          _f.swap(f);
+          _h.swap(h);
+          _timeout = to;
+          if (_f)
           {
-            if (h && timeout)
-              timeout_id = self._io.schedule(boost::bind(handle_timeout, s, on_event), timeout);
-            (self._io.*on_event)(self._sock, boost::bind(handle_event, s, on_event));
+            if (_timeout)
+              _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout<on_event>, this, s), _timeout);
+            (sock._io.*on_event)(sock._sock, boost::bind(&context::handle_event<on_event>, this, s));
           }
           else
-            (self._io.*on_event)(self._sock, scheduler::task());
+            (sock._io.*on_event)(sock._sock, scheduler::task());
+        }
+
+      private:
+        handler                 _f;
+        handler                 _h;
+        scheduler::task_id      _timeout_id;
+        second_t                _timeout;
+
+        template <registrar on_event>
+        void handle_event(socket s)
+        {
+          system_socket & sock( *s );
+          sock._io.cancel(_timeout_id);
+          if (_f) _f(s);
+          if (_f)
+          {
+            if (_timeout)
+              _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout<on_event>, this, s), _timeout);
+          }
+          else
+            (sock._io.*on_event)(sock._sock, scheduler::task());
+        }
+
+        template <registrar on_event>
+        void handle_timeout(socket s)
+        {
+          handler h;
+          h.swap(_h);
+          set<on_event>(s, handler(), 0, handler());
+          if (h) h(s);
         }
       };
 
       context _input, _output;
-
-      static void handle_event(socket s, registrar on_event)
-      {
-        system_socket & self( *s );
-        context & ctx( on_event == &scheduler::on_input ? self._input : self._output );
-        self._io.cancel(ctx.timeout_id);
-        if (ctx.f) ctx.f(s);
-        if (ctx.f)
-        {
-          if (ctx.h && ctx.timeout)
-            ctx.timeout_id = self._io.schedule(boost::bind(handle_timeout, s, on_event), ctx.timeout);
-        }
-        else
-          (self._io.*on_event)(self._sock, scheduler::task());
-      }
-
-      static void handle_timeout(socket s, registrar on_event)
-      {
-        system_socket & self( *s );
-        context & ctx( on_event == &scheduler::on_input ? self._input : self._output );
-        handler f, h;
-        f.swap(ctx.f);
-        h.swap(ctx.h);
-        (self._io.*on_event)(self._sock, scheduler::task());
-        if (h) h(s);
-      }
-    };
-
-    class echo_handler
-    {
-    public:
     };
   }
 }
 
 void print_id(unsigned int id) { std::cout << "task id " << id << std::endl; }
 
-void socket_timeout(postmaster::io::socket s)
+void socket_timeout(postmaster::io::socket s1, postmaster::io::socket s2, postmaster::io::socket s)
 {
+  BOOST_ASSERT(s == s1 || s == s2);
   std::cout << "timeout on socket " << s << std::endl;
+  postmaster::io::on_input(s1,  postmaster::io::system_socket::handler());
+  postmaster::io::on_output(s1, postmaster::io::system_socket::handler());
+  postmaster::io::on_input(s2,  postmaster::io::system_socket::handler());
+  postmaster::io::on_output(s2, postmaster::io::system_socket::handler());
 }
 
 int main(int, char**)
@@ -317,21 +318,14 @@ int main(int, char**)
   using boost::bind;
 
   static scheduler io;
-
-  socket s( create_socket(io, STDIN_FILENO) ); s->close_on_destruction(false);
-  on_input(s, bind(print_id, 10u), 5u, bind(socket_timeout, s));
-  s.reset();
-
-
-//   socket sout( create_socket(io, STDOUT_FILENO) ); sout->close_on_destruction(false);
-//   socket serr( create_socket(io, STDERR_FILENO) ); serr->close_on_destruction(false);
-
-//   io.schedule(bind(&boost::shared_ptr<system_socket>::reset, boost::ref(sin)), 5u);
-//   io.on_input(STDIN_FILENO, bind(print_id, 10u));
-//
-//   io.schedule(bind(&scheduler::unregister_socket, &io, STDOUT_FILENO), 2u);
-//   io.on_output(STDOUT_FILENO, bind(print_id, 20u));
-//
+  {
+    socket sin( create_socket(io, STDIN_FILENO) ); sin->close_on_destruction(false);
+    socket sout( create_socket(io, STDOUT_FILENO) ); sout->close_on_destruction(false);
+    cout << "standard input  = socket " << sin << endl
+         << "standard output = socket " << sout << endl;
+    on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, _1));
+    on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, _1));
+  }
 
   io.schedule(bind(print_id, 3u), 1u);
   io.schedule(bind(print_id, 0u));
