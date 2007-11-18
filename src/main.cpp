@@ -17,21 +17,21 @@
 
 namespace postmaster
 {
+  // Basic system types for this platform.
+
+  using std::size_t;
+  using std::ptrdiff_t;
+  using std::time_t;
+  typedef unsigned int second_t;
+
+  // Popular system error types.
+
+  using boost::system::error_code;
+  using boost::system::errno_ecat;
+  using boost::system::system_error;
+
   namespace io
   {
-    // Basic system types for this platform.
-
-    using std::size_t;
-    using std::ptrdiff_t;
-    using std::time_t;
-    typedef unsigned int second_t;
-
-    // Popular system error types.
-
-    using boost::system::error_code;
-    using boost::system::errno_ecat;
-    using boost::system::system_error;
-
     // Co-operative multi-tasking scheduler.
 
     class core : private boost::noncopyable
@@ -314,6 +314,7 @@ void socket_timeout(postmaster::io::socket s1, postmaster::io::socket s2, postma
 int main(int, char**)
 {
   using namespace std;
+  using namespace postmaster;
   using namespace postmaster::io;
   using boost::bind;
 
