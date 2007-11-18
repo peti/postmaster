@@ -20,7 +20,7 @@ int main(int, char**)
   using namespace postmaster::io;
   using boost::bind;
 
-  static scheduler io;
+  scheduler io;
   {
     socket sin( create_socket(io, STDIN_FILENO) ); sin->close_on_destruction(false);
     socket sout( create_socket(io, STDOUT_FILENO) ); sout->close_on_destruction(false);
