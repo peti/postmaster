@@ -20,25 +20,27 @@ int main(int, char**)
   using namespace postmaster::io;
   using boost::bind;
 
-  scheduler io;
-  {
-    socket sin( create_socket(io, STDIN_FILENO) );   close_on_destruction(sin, false);
-    socket sout( create_socket(io, STDOUT_FILENO) ); close_on_destruction(sout, false);
-    cout << "standard input  = socket " << sin << endl
-         << "standard output = socket " << sout << endl;
-    on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, sin));
-    on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, sout));
-  }
+  resolver io;
+//   {
+//     io::socket sin( create_socket(io, STDIN_FILENO) );   close_on_destruction(sin, false);
+//     io::socket sout( create_socket(io, STDOUT_FILENO) ); close_on_destruction(sout, false);
+//     cout << "standard input  = socket " << sin << endl
+//          << "standard output = socket " << sout << endl;
+//     on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, sin));
+//     on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, sout));
+//   }
+//
+//   io.schedule(bind(print_id, 3u), 1u);
+//   io.schedule(bind(print_id, 0u));
+//   io.schedule(bind(print_id, 4u), 3u);
+//   io.schedule(bind(print_id, 1u));
+//   io.schedule(bind(print_id, 2u));
 
-  io.schedule(bind(print_id, 3u), 1u);
-  io.schedule(bind(print_id, 0u));
-  io.schedule(bind(print_id, 4u), 3u);
-  io.schedule(bind(print_id, 1u));
-  io.schedule(bind(print_id, 2u));
+  io.query_a("peti-ip.localhost", boost::bind(&print_id, 33u));
 
-  int pipe_fds[2];
-  if (pipe(pipe_fds) != 0)
-    throw system_error(errno, errno_ecat, "pipe(2) failed");
+//   int pipe_fds[2];
+//   if (pipe(pipe_fds) != 0)
+//     throw system_error(errno, errno_ecat, "pipe(2) failed");
 
   for(;;)
   {

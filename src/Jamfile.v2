@@ -5,4 +5,7 @@ exe postmaster
   : <use>/boost
     <use>/boost//system <library>/boost//system
     <use>/boost//prg_exec_monitor <library>/boost//prg_exec_monitor
+    <library>adns
   ;
+
+lib adns ;

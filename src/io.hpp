@@ -5,13 +5,19 @@
 #include <boost/function/function0.hpp>
 #include <boost/function/function1.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/scoped_array.hpp>
 #include <boost/compatibility/cpp_c_headers/cstddef>
 #include <boost/compatibility/cpp_c_headers/ctime>
 #include <boost/compatibility/cpp_c_headers/cerrno>
 #include <boost/system/system_error.hpp>
 #include <boost/bind.hpp>
 #include <map>
+#include <vector>
+#include <set>
 #include <sys/epoll.h>
+#include <adns.h>
+#include <poll.h>
+#include <iostream>
 
 namespace postmaster
 {
@@ -53,6 +59,8 @@ namespace postmaster
         task_queue::iterator const i( _tasks.insert(std::make_pair(_now + from_now, t)) );
         return std::make_pair(i->first, i);
       }
+
+      time_t now() const { return _now; }
 
       void cancel(task_id & tid)
       {
@@ -110,8 +118,9 @@ namespace postmaster
           run_epoll(next_event ? static_cast<int>(next_event) * 1000 : -1);
       }
 
-      void register_socket(socket_id const & s)
+      void register_socket(socket_id s)
       {
+        std::cout << "register socket " << s << std::endl;
         BOOST_ASSERT(s >= 0);
         BOOST_ASSERT(_handlers.find(s) == _handlers.end());
         _handlers[s] = handler();
@@ -125,8 +134,9 @@ namespace postmaster
         }
       }
 
-      void unregister_socket(socket_id const & s)
+      void unregister_socket(socket_id s)
       {
+        std::cout << "unregister socket " << s << std::endl;
         BOOST_ASSERT(s >= 0);
         handler_map::iterator const i( _handlers.find(s) );
         BOOST_ASSERT(i != _handlers.end());
@@ -295,6 +305,214 @@ namespace postmaster
       };
 
       context _input, _output;
+    };
+
+    class resolver : public scheduler
+    {
+    public:
+      typedef std::string                       hostname;
+      typedef std::vector<hostname>             hostname_list;
+
+      typedef boost::function1<void, hostname_list> a_handler;
+
+      resolver() : _scheduled(false)
+      {
+        adns_initflags const flags(static_cast<adns_initflags>( adns_if_debug
+                                                              | adns_if_noautosys
+                                                              | adns_if_nosigpipe
+                                                              | adns_if_checkc_freq
+                                                              ));
+        int const rc( adns_init(&_state, flags, 0) );
+        if (rc) throw system_error(rc, errno_ecat, "cannot initialize adns resolver");
+        BOOST_ASSERT(_state);
+        update();
+      }
+
+      ~resolver()
+      {
+        release_fds();
+        adns_finish(_state);
+      }
+
+      void query_a(char const * owner, a_handler const & h)
+      {
+        BOOST_ASSERT(h);
+        submit(owner, adns_r_a, adns_qf_owner, boost::bind(handleA, _1, h));
+      }
+
+      void query_a_no_cname(char const * owner, a_handler const & h)
+      {
+        BOOST_ASSERT(h);
+        submit(owner, adns_r_a, adns_qf_owner | adns_qf_cname_forbid, boost::bind(handleA, _1, h));
+      }
+
+    private:
+      typedef boost::shared_ptr<adns_answer>    answer;
+      typedef boost::function1<void, answer>    callback;
+      typedef std::map<adns_query,callback>     query_set;
+
+      adns_state        _state;
+      query_set         _qset;
+      bool              _scheduled;
+
+      void schedule_deliver()
+      {
+        check_consistency();
+        if (!_scheduled)
+        {
+          schedule(boost::bind(&resolver::deliver, this));
+          _scheduled = true;
+        }
+      }
+
+      void release_fds()
+      {
+        cancel(_timeout);
+        fd_set fdset;
+        fdset.swap(_registered_fds);
+        std::for_each(fdset.begin(), fdset.end(), boost::bind(&scheduler::unregister_socket, this, _1));
+      }
+
+      void submit(char const * owner, adns_rrtype rrtype, int flags, callback f)
+      {
+        schedule_deliver();
+        adns_query qid;
+        int const rc( adns_submit(_state, owner,  rrtype, static_cast<adns_queryflags>(flags), 0, &qid) );
+        if (rc) throw system_error(rc, errno_ecat, "adns_query() failed");
+        _qset[qid].swap(f);
+      }
+
+      void register_fds()
+      {
+        std::cout << "re-register adns in scheduler" << std::endl;
+        BOOST_ASSERT(!_qset.empty());
+
+        // Determine the file descriptors we have to probe for.
+
+        boost::scoped_array<pollfd> fds( new pollfd[ADNS_POLLFDS_RECOMMENDED] );
+        int nfds(ADNS_POLLFDS_RECOMMENDED);
+        int timeout;
+        update();
+        for (int rc( ERANGE ); rc == ERANGE; /**/)
+        {
+          timeout = -1;
+          rc = adns_beforepoll(_state, fds.get(), &nfds, &timeout, &_now);
+          switch(rc)
+          {
+            case ERANGE:        BOOST_ASSERT(nfds > 0); fds.reset( new pollfd[nfds] ); break;
+            case 0:             break;
+            default:            throw system_error(rc, errno_ecat, "adns_beforepoll() failed");
+          }
+        }
+        BOOST_ASSERT(nfds >= 0);
+
+        // Re-register the descriptors in scheduler.
+
+        fd_set registered_fds;
+        for (int i(0); i != nfds; ++i)
+        {
+          BOOST_ASSERT(fds[i].fd >= 0);
+          BOOST_ASSERT(fds[i].events & (POLLIN | POLLOUT));
+          std::cout << "probe adns fd " << fds[i].fd << std::endl;
+          registered_fds.insert(fds[i].fd);
+        }
+        std::vector<int> fdset;
+        std::set_difference( _registered_fds.begin(), _registered_fds.end()
+                           , registered_fds.begin(),  registered_fds.end()
+                           , std::back_insert_iterator< std::vector<int> >(fdset)
+                           );
+        std::for_each(fdset.begin(), fdset.end(), boost::bind(&scheduler::unregister_socket, this, _1));
+        fdset.resize(0);
+        std::set_difference( registered_fds.begin(),  registered_fds.end()
+                           , _registered_fds.begin(), _registered_fds.end()
+                           , std::back_insert_iterator< std::vector<int> >(fdset)
+                           );
+        std::for_each(fdset.begin(), fdset.end(), boost::bind(&scheduler::register_socket, this, _1));
+        _registered_fds.swap(registered_fds);
+        for (int i(0); i != nfds; ++i)
+        {
+          if (fds[i].events & POLLIN)  on_input(fds[i].fd, boost::bind(&resolver::process_fd, this, &adns_processreadable, fds[i].fd));
+          if (fds[i].events & POLLOUT) on_input(fds[i].fd, boost::bind(&resolver::process_fd, this, &adns_processwriteable, fds[i].fd));
+        }
+        cancel(_timeout);
+        timeout /= 1000;
+        if (timeout > 0) _timeout = schedule(boost::bind(&resolver::process_timeout, this), timeout);
+      }
+
+      typedef std::set<int>     fd_set;
+      typedef fd_set::iterator  fd_set_iterator;
+
+      fd_set            _registered_fds;
+      timeval           _now;
+      core::task_id     _timeout;
+
+      void update()
+      {
+        _now.tv_sec  = now();
+        _now.tv_usec = 0;
+      }
+
+      void process_fd(int (*f)(adns_state, int, timeval const *), int fd)
+      {
+        std::cout << "process adns fd " << fd << std::endl;
+        update();
+        int const rc( (*f)(_state, fd, &_now) );
+        if (rc) throw system_error(rc, errno_ecat, "adns process callback failed");
+        schedule_deliver();
+      }
+
+      void process_timeout()
+      {
+        std::cout << "process adns timeouts" << std::endl;
+        update();
+        adns_processtimeouts(_state, &_now);
+        schedule_deliver();
+      }
+
+      void deliver()
+      {
+        _scheduled = false;
+        check_consistency();
+        answer ans;
+        for (callback f; /**/; f.clear(), ans.reset())
+        {
+          adns_query      qid(0);
+          adns_answer *   a(0);
+          int const rc = adns_check(_state, &qid, &a, 0);
+          switch (rc)
+          {
+            case ESRCH:   BOOST_ASSERT(_qset.empty());  return release_fds();
+            case EAGAIN:  BOOST_ASSERT(!_qset.empty()); return register_fds();
+            case 0:       break;
+            default:      throw system_error(rc, errno_ecat, "adns_check() failed");
+          }
+          BOOST_ASSERT(a);
+          ans.reset(a, &::free);
+          query_set::iterator const i( _qset.find(qid) );
+          BOOST_ASSERT(i != _qset.end());
+          f.swap(i->second);
+          _qset.erase(i);
+          f(ans);
+        }
+        check_consistency();
+      }
+
+      void check_consistency() const
+      {
+#ifndef NDEBUG
+        adns_forallqueries_begin(_state);
+        for ( adns_query qid( adns_forallqueries_next(_state, 0) )
+            ; qid != 0
+            ; qid = adns_forallqueries_next(_state, 0)
+            )
+          BOOST_ASSERT(_qset.find(qid) != _qset.end());
+#endif
+      }
+
+      static void handleA(answer a, a_handler h)
+      {
+        std::cout << "dns response: " << a->owner << " -> " << adns_strerror(a->status) << std::endl;
+      }
     };
   }
 }
