@@ -408,7 +408,7 @@ namespace postmaster
       void register_fds()
       {
         std::cout << "re-register adns in scheduler" << std::endl;
-        BOOST_ASSERT(!_qset.empty());
+        if (_qset.empty()) return release_fds();
 
         // Determine the file descriptors we have to probe for.
 
@@ -454,12 +454,19 @@ namespace postmaster
         _registered_fds.swap(registered_fds);
         for (int i(0); i != nfds; ++i)
         {
-          if (fds[i].events & POLLIN)  on_input(fds[i].fd, boost::bind(&resolver::process_fd, this, &adns_processreadable, fds[i].fd));
-          if (fds[i].events & POLLOUT) on_input(fds[i].fd, boost::bind(&resolver::process_fd, this, &adns_processwriteable, fds[i].fd));
+          if (fds[i].events & POLLIN)
+            on_input(fds[i].fd, boost::bind(&resolver::process_fd, this, &adns_processreadable, fds[i].fd));
+          else
+            on_input(fds[i].fd, scheduler::task());
+          if (fds[i].events & POLLOUT)
+            on_output(fds[i].fd, boost::bind(&resolver::process_fd, this, &adns_processwriteable, fds[i].fd));
+          else
+            on_output(fds[i].fd, scheduler::task());
         }
         cancel(_timeout);
         timeout /= 1000;
-        if (timeout > 0) _timeout = schedule(boost::bind(&resolver::process_timeout, this), timeout);
+        if (timeout == 0)  process_timeout();
+        if (timeout > 0)   _timeout = schedule(boost::bind(&resolver::process_timeout, this), timeout);
       }
 
       typedef std::set<int>     fd_set;
@@ -478,22 +485,23 @@ namespace postmaster
       void process_fd(int (*f)(adns_state, int, timeval const *), int fd)
       {
         std::cout << "process adns fd " << fd << std::endl;
+        schedule_deliver();
         update();
         int const rc( (*f)(_state, fd, &_now) );
         if (rc) throw system_error(rc, errno_ecat, "adns process callback failed");
-        schedule_deliver();
       }
 
       void process_timeout()
       {
         std::cout << "process adns timeouts" << std::endl;
+        schedule_deliver();
         update();
         adns_processtimeouts(_state, &_now);
-        schedule_deliver();
       }
 
       void deliver()
       {
+        std::cout << "deliver adns events" << std::endl;
         _scheduled = false;
         check_consistency();
         answer ans;
@@ -501,7 +509,7 @@ namespace postmaster
         {
           adns_query      qid(0);
           adns_answer *   a(0);
-          int const rc = adns_check(_state, &qid, &a, 0);
+          int const       rc( adns_check(_state, &qid, &a, 0) );
           switch (rc)
           {
             case ESRCH:   BOOST_ASSERT(_qset.empty());  return release_fds();
@@ -625,30 +633,6 @@ namespace postmaster
             break;
         }
       }
-
-// typedef struct {
-//   adns_status status;
-//   char *cname; /* always NULL if query was for CNAME records */
-//   char *owner; /* only set if req'd in query flags; maybe 0 on error anyway */
-//   adns_rrtype type; /* guaranteed to be same as in query */
-//   time_t expires;/*abs time.  def only if _s_ok, nxdomain or nodata. NOT TTL!*/
-//   int nrrs, rrsz; /* nrrs is 0 if an error occurs */
-//   union {
-//     void *untyped;
-//     unsigned char *bytes;
-//     char *(*str);                    /* ns_raw, cname, ptr, ptr_raw */
-//     adns_rr_intstr *(*manyistr);     /* txt (list strs ends with i=-1, str=0)*/
-//     adns_rr_addr *addr;              /* addr */
-//     struct in_addr *inaddr;          /* a */
-//     adns_rr_hostaddr *hostaddr;      /* ns */
-//     adns_rr_intstrpair *intstrpair;  /* hinfo */
-//     adns_rr_strpair *strpair;        /* rp, rp_raw */
-//     adns_rr_inthostaddr *inthostaddr;/* mx */
-//     adns_rr_intstr *intstr;          /* mx_raw */
-//     adns_rr_soa *soa;                /* soa, soa_raw */
-//   } rrs;
-// } adns_answer;
-
     };
   }
 }
