@@ -18,6 +18,9 @@
 #include <adns.h>
 #include <poll.h>
 #include <iostream>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 namespace postmaster
 {
@@ -310,10 +313,18 @@ namespace postmaster
     class resolver : public scheduler
     {
     public:
-      typedef std::string                       hostname;
-      typedef std::vector<hostname>             hostname_list;
+      typedef std::string                               hostname;
+      typedef std::vector<hostname>                     hostname_list;
 
-      typedef boost::function1<void, hostname_list> a_handler;
+      typedef std::string                               hostaddr;
+      typedef std::vector<hostaddr>                     hostaddr_list;
+
+      typedef std::pair<hostname,hostaddr_list>         mxname;
+      typedef std::vector<mxname>                       mxname_list;
+
+      typedef boost::function1<void, hostaddr_list *>   a_handler;
+      typedef boost::function1<void, mxname_list *>     mx_handler;
+      typedef boost::function1<void, hostname *>        ptr_handler;
 
       resolver() : _scheduled(false)
       {
@@ -337,19 +348,31 @@ namespace postmaster
       void query_a(char const * owner, a_handler const & h)
       {
         BOOST_ASSERT(h);
-        submit(owner, adns_r_a, adns_qf_owner, boost::bind(handleA, _1, h));
+        submit(owner, adns_r_a, 0, boost::bind(handleA, _1, h));
       }
 
       void query_a_no_cname(char const * owner, a_handler const & h)
       {
         BOOST_ASSERT(h);
-        submit(owner, adns_r_a, adns_qf_owner | adns_qf_cname_forbid, boost::bind(handleA, _1, h));
+        submit(owner, adns_r_a, 0 | adns_qf_cname_forbid, boost::bind(handleA, _1, h));
+      }
+
+      void query_mx(char const * owner, mx_handler const & h)
+      {
+        BOOST_ASSERT(h);
+        submit(owner, adns_r_mx, 0, boost::bind(handleMX, _1, h));
+      }
+
+      void query_ptr(char const * owner, ptr_handler const & h)
+      {
+        BOOST_ASSERT(h);
+        submit(owner, adns_r_ptr, 0, boost::bind(handlePTR, _1, h));
       }
 
     private:
-      typedef boost::shared_ptr<adns_answer>    answer;
-      typedef boost::function1<void, answer>    callback;
-      typedef std::map<adns_query,callback>     query_set;
+      typedef boost::shared_ptr<adns_answer const>      answer;
+      typedef boost::function1<void, answer>            callback;
+      typedef std::map<adns_query,callback>             query_set;
 
       adns_state        _state;
       query_set         _qset;
@@ -511,8 +534,121 @@ namespace postmaster
 
       static void handleA(answer a, a_handler h)
       {
-        std::cout << "dns response: " << a->owner << " -> " << adns_strerror(a->status) << std::endl;
+        BOOST_ASSERT(a->type == adns_r_a);
+        hostaddr_list hs;
+        switch (a->status)
+        {
+          case adns_s_ok:
+            BOOST_ASSERT(a->nrrs > 0);
+            for (int i(0); i != a->nrrs; ++i)
+            {
+              char const * str( inet_ntoa(a->rrs.inaddr[i]) );
+              BOOST_ASSERT(str);
+              hs.push_back(str);
+            }
+            h(&hs);
+            break;
+
+          case adns_s_nxdomain:
+          case adns_s_nodata:
+            BOOST_ASSERT(a->nrrs == 0);
+            h(&hs);
+            break;
+
+          default:
+            BOOST_ASSERT(a->nrrs == 0);
+            h(0);
+            break;
+        }
       }
+
+      static void handleMX(answer a, mx_handler h)
+      {
+        BOOST_ASSERT(a->type == adns_r_mx);
+        mxname_list mxs;
+        std::multimap<int,adns_rr_hostaddr const *> mxmap;
+        switch (a->status)
+        {
+          case adns_s_ok:
+            BOOST_ASSERT(a->nrrs > 0);
+            for (int i(0); i != a->nrrs; ++i)
+            {
+              adns_rr_inthostaddr const & addr( a->rrs.inthostaddr[i] );
+              mxmap.insert(std::make_pair(addr.i, &addr.ha));
+            }
+            for (std::multimap<int,adns_rr_hostaddr const *>::iterator i(mxmap.begin()); i != mxmap.end(); ++i)
+            {
+              adns_rr_hostaddr const & addr( *i->second );
+              hostaddr_list ha;
+              if (addr.naddrs > 0)
+                for (int j(0); j != addr.naddrs; ++j)
+                  ha.push_back(inet_ntoa( addr.addrs[j].addr.inet.sin_addr ));
+              mxs.push_back(std::make_pair(addr.host, ha));
+            }
+            h(&mxs);
+            break;
+
+          case adns_s_nxdomain:
+          case adns_s_nodata:
+            BOOST_ASSERT(a->nrrs == 0);
+            h(&mxs);
+            break;
+
+          default:
+            BOOST_ASSERT(a->nrrs == 0);
+            h(0);
+            break;
+        }
+      }
+
+      static void handlePTR(answer a, ptr_handler h)
+      {
+        BOOST_ASSERT(a->type == adns_r_ptr);
+        hostname ha;
+        switch (a->status)
+        {
+          case adns_s_ok:
+            BOOST_ASSERT(a->nrrs == 1);
+            ha.assign(a->rrs.str[0]);
+            h(&ha);
+            break;
+
+          case adns_s_nxdomain:
+          case adns_s_nodata:
+            BOOST_ASSERT(a->nrrs == 0);
+            h(&ha);
+            break;
+
+          default:
+            BOOST_ASSERT(a->nrrs == 0);
+            h(0);
+            break;
+        }
+      }
+
+// typedef struct {
+//   adns_status status;
+//   char *cname; /* always NULL if query was for CNAME records */
+//   char *owner; /* only set if req'd in query flags; maybe 0 on error anyway */
+//   adns_rrtype type; /* guaranteed to be same as in query */
+//   time_t expires;/*abs time.  def only if _s_ok, nxdomain or nodata. NOT TTL!*/
+//   int nrrs, rrsz; /* nrrs is 0 if an error occurs */
+//   union {
+//     void *untyped;
+//     unsigned char *bytes;
+//     char *(*str);                    /* ns_raw, cname, ptr, ptr_raw */
+//     adns_rr_intstr *(*manyistr);     /* txt (list strs ends with i=-1, str=0)*/
+//     adns_rr_addr *addr;              /* addr */
+//     struct in_addr *inaddr;          /* a */
+//     adns_rr_hostaddr *hostaddr;      /* ns */
+//     adns_rr_intstrpair *intstrpair;  /* hinfo */
+//     adns_rr_strpair *strpair;        /* rp, rp_raw */
+//     adns_rr_inthostaddr *inthostaddr;/* mx */
+//     adns_rr_intstr *intstr;          /* mx_raw */
+//     adns_rr_soa *soa;                /* soa, soa_raw */
+//   } rrs;
+// } adns_answer;
+
     };
   }
 }
