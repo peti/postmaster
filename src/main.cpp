@@ -1,6 +1,6 @@
+#include "esmtp.hpp"
 #include "io.hpp"
 #include <iostream>
-#include <boost/lexical_cast.hpp>
 #include <boost/tuple/tuple_io.hpp>
 
 struct print
@@ -51,6 +51,19 @@ void socket_timeout(postmaster::io::socket s1, postmaster::io::socket s2, postma
   postmaster::io::on_output(s2, postmaster::io::system_socket::handler());
 }
 
+inline std::ostream & operator<< (std::ostream & os, boost::spirit::parse_info<> const r)
+{
+   os << "parser: ";
+   if (r.hit)
+   {
+     if (r.full) os << "full ";
+     os << "hit (" << r.length << " bytes)";
+   }
+   else
+     os << "miss";
+   return os;
+}
+
 int main(int, char**)
 {
   using namespace std;
@@ -58,8 +71,20 @@ int main(int, char**)
   using namespace postmaster::io;
   using boost::bind;
 
-  resolver io;
+  using namespace boost::spirit;
+  using namespace phoenix;
+
+  char const input[] = "EHLo write-ONLY.cryp.to\r\n\r\nnoop\r\nnoop fo bar \r\nnabc\r\n\r";
+
+  esmtp::server serv;
+  char const * r( serv(&input[0], &input[sizeof(input)-1]) );
+  if (!r) cout << "syntax error" << endl;
+  else    cout << "consumed " << r - &input[0] << " bytes, "
+               << &input[sizeof(input)-1] - r << " left."
+               << endl;
+
 #if 0
+  resolver io;
   {
     io::socket sin( create_socket(io, STDIN_FILENO) );   close_on_destruction(sin, false);
     io::socket sout( create_socket(io, STDOUT_FILENO) ); close_on_destruction(sout, false);
@@ -74,7 +99,6 @@ int main(int, char**)
   io.schedule(bind(print_id, 4u), 3u);
   io.schedule(bind(print_id, 1u));
   io.schedule(bind(print_id, 2u));
-#endif
   io.query_a("peti-ip.localhost", print());
   io.query_a_no_cname("peti-mx.localhost", print());
   io.query_mx("peti-ip.localhost", print());
@@ -92,6 +116,7 @@ int main(int, char**)
       std::cout << "*** I/O main loop caught: " << e.what() << endl;
     }
   }
+#endif
 
   cout << "postmaster shut down" << endl;
   return 0;
