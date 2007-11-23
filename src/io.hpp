@@ -12,15 +12,19 @@
 #include <boost/system/system_error.hpp>
 #include <boost/bind.hpp>
 #include <map>
+#include <functional>
 #include <vector>
 #include <set>
-#include <sys/epoll.h>
 #include <adns.h>
 #include <poll.h>
 #include <iostream>
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 namespace postmaster
 {
@@ -31,11 +35,31 @@ namespace postmaster
   using std::time_t;
   typedef unsigned int second_t;
 
-  // Popular system error types.
-
-  using boost::system::error_code;
   using boost::system::errno_ecat;
   using boost::system::system_error;
+
+  // Throw system errors, but re-try on EINTR.
+
+  template <class Result, class Cond, class Func>
+  Result throw_errno_if(Cond failure, char const * ctx, Func f)
+  {
+    Result r;
+    for (r = f(); failure(r); r = f())
+    {
+      if (errno != EINTR)
+      {
+        system_error error(errno, errno_ecat, ctx);
+        throw error;
+      }
+    }
+    return r;
+  }
+
+  template <class Func>
+  int throw_errno_if_minus_one(char const * ctx, Func f)
+  {
+    return throw_errno_if<int>(boost::bind(std::equal_to<int>(), -1, _1), ctx, f);
+  }
 
   namespace io
   {
@@ -108,12 +132,18 @@ namespace postmaster
     public:
       typedef int socket_id;
 
-      explicit scheduler(unsigned int size_hint = 512u) : _epoll_fd( epoll_create(size_hint) )
+      explicit scheduler(unsigned int size_hint = 512u)
       {
-        if (_epoll_fd < 0) throw system_error(errno, errno_ecat, "epoll_create(2) failed");
+        BOOST_ASSERT(size_hint <= static_cast<unsigned int>(std::numeric_limits<int>::max()));
+        _epoll_fd = throw_errno_if_minus_one( "epoll_create(2) failed"
+                                            , boost::bind(&epoll_create, static_cast<int>(size_hint))
+                                            );
       }
 
-      ~scheduler() { ::close(_epoll_fd); }
+      ~scheduler()
+      {
+        throw_errno_if_minus_one("epoll_create(2) failed", boost::bind(&close, _epoll_fd));
+      }
 
       void run()
       {
@@ -126,14 +156,20 @@ namespace postmaster
         std::cout << "register socket " << s << std::endl;
         BOOST_ASSERT(s >= 0);
         BOOST_ASSERT(_handlers.find(s) == _handlers.end());
-        _handlers[s] = handler();
-        epoll_event ev;
-        ev.data.fd = s;
-        ev.events  = 0;
-        if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, s, &ev) != 0)
+        try
+        {
+          _handlers[s] = handler();
+          epoll_event ev;
+          ev.data.fd = s;
+          ev.events  = 0;
+          throw_errno_if_minus_one( "epoll_ctl() failed to add a socket"
+                                  , boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_ADD, s, &ev)
+                                  );
+        }
+        catch(...)
         {
           _handlers.erase(s);
-          throw system_error(errno, errno_ecat, "scheduler::register_socket() failed");
+          throw;
         }
       }
 
@@ -147,8 +183,9 @@ namespace postmaster
         epoll_event ev;
         ev.data.fd = s;
         ev.events  = 0;
-        if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, s, &ev) != 0)
-          throw system_error(errno, errno_ecat, "scheduler::unregister_socket() failed");
+        throw_errno_if_minus_one( "epoll_ctl() failed to delete a socket"
+                                , boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_DEL, s, &ev)
+                                );
       }
 
       void on_input(socket_id s, task t)
@@ -181,8 +218,10 @@ namespace postmaster
       void run_epoll(int timeout)
       {
         epoll_event ev[32u];
-        int const rc( epoll_wait(_epoll_fd, ev, sizeof(ev) / sizeof(epoll_event), timeout) );
-        if (rc < 0) throw system_error(errno, errno_ecat, "scheduler::run_epoll() failed");
+        int const rc( throw_errno_if_minus_one( "epoll_wait() failed"
+                                              , boost::bind(&epoll_wait, _epoll_fd, ev, sizeof(ev) / sizeof(epoll_event), timeout)
+                                              )
+                    );
         update();
         for (int i(0); i != rc; ++i)
         {
@@ -199,8 +238,7 @@ namespace postmaster
         epoll_event ev;
         ev.data.fd = s;
         ev.events  = (h.first ? EPOLLIN : 0) | (h.second ? EPOLLOUT : 0);
-        if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, s, &ev) != 0)
-          throw system_error(errno, errno_ecat, ctxid);
+        throw_errno_if_minus_one(ctxid, boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_MOD, s, &ev));
       }
     };
 
@@ -217,7 +255,8 @@ namespace postmaster
       ~system_socket()
       {
         _io.unregister_socket(_sock);
-        if (_close_on_destruction) ::close(_sock);
+        if (_close_on_destruction)
+          throw_errno_if_minus_one("close() failed", boost::bind(&close, _sock));
       }
 
       friend socket create_socket(scheduler & io, int fd)
@@ -333,8 +372,7 @@ namespace postmaster
                                                               | adns_if_nosigpipe
                                                               | adns_if_checkc_freq
                                                               ));
-        int const rc( adns_init(&_state, flags, 0) );
-        if (rc) throw system_error(rc, errno_ecat, "cannot initialize adns resolver");
+        throw_rc_if_not_zero("cannot initialize adns resolver", boost::bind(&adns_init, &_state, flags, static_cast<FILE*>(0)));
         BOOST_ASSERT(_state);
         update();
       }
@@ -400,8 +438,9 @@ namespace postmaster
       {
         schedule_deliver();
         adns_query qid;
-        int const rc( adns_submit(_state, owner,  rrtype, static_cast<adns_queryflags>(flags), 0, &qid) );
-        if (rc) throw system_error(rc, errno_ecat, "adns_query() failed");
+        throw_rc_if_not_zero( "adns_query() failed"
+                            , boost::bind(&adns_submit, _state, owner, rrtype, static_cast<adns_queryflags>(flags), static_cast<FILE*>(0), &qid)
+                            );
         _qset[qid].swap(f);
       }
 
@@ -487,8 +526,7 @@ namespace postmaster
         std::cout << "process adns fd " << fd << std::endl;
         schedule_deliver();
         update();
-        int const rc( (*f)(_state, fd, &_now) );
-        if (rc) throw system_error(rc, errno_ecat, "adns process callback failed");
+        throw_rc_if_not_zero("adns processing callback failed", boost::bind(f, _state, fd, &_now));
       }
 
       void process_timeout()
@@ -532,10 +570,9 @@ namespace postmaster
       {
 #ifndef NDEBUG
         adns_forallqueries_begin(_state);
-        for ( adns_query qid( adns_forallqueries_next(_state, 0) )
-            ; qid != 0
-            ; qid = adns_forallqueries_next(_state, 0)
-            )
+        for ( adns_query qid( adns_forallqueries_next(_state, 0) );
+              qid != 0;
+              qid = adns_forallqueries_next(_state, 0))
           BOOST_ASSERT(_qset.find(qid) != _qset.end());
 #endif
       }
@@ -633,8 +670,115 @@ namespace postmaster
             break;
         }
       }
+
+      template <class Func>
+      static void throw_rc_if_not_zero(char const * ctx, Func f)
+      {
+        int const rc( f() );
+        if (rc != 0) { system_error error(rc, errno_ecat, ctx); throw error; }
+      }
     };
   }
+
+  class system : public io::resolver
+  {
+  public:
+    typedef int                                 exit_code;
+    typedef boost::function<void (exit_code)>   exit_handler;
+    typedef pid_t                               child_id;
+
+    system() : _scheduled(false)
+    {
+      struct sigaction a;
+      std::memset(&a, 0, sizeof(a));
+      a.sa_handler = SIG_IGN;
+      for (int i(0); i != 32; ++i) sigaction(i, &a, 0);
+      a.sa_handler = &handle_signal;
+      a.sa_flags = SA_NOCLDSTOP | SA_NODEFER;
+      throw_errno_if_minus_one( "cannot install SIGCHLD handler"
+                              , boost::bind(&sigaction, SIGCHLD, &a, static_cast<struct sigaction *>(0))
+                              );
+    }
+
+    child_id execute(exit_handler const & f, char const * filepath, char const * const * argv)
+    {
+      return execute(f, filepath, argv, environ);
+    }
+
+    child_id execute(exit_handler const & f, char const * filepath, char const * const * argv, char const * const * envp)
+    {
+      BOOST_ASSERT(f);
+      BOOST_ASSERT(filepath); BOOST_ASSERT(filepath[0]);
+      BOOST_ASSERT(argv); BOOST_ASSERT(argv[0]);
+      BOOST_ASSERT(envp);
+      child_id const pid( throw_errno_if_minus_one("cannot fork() new process", boost::bind(&fork)) );
+      if (pid == 0)             // child
+      {
+        execve(filepath, const_cast<char **>(argv), const_cast<char **>(envp));
+        std::cerr << "execve(" << filepath << ") failed: " << system_error(errno, errno_ecat).what() << std::endl;
+        _Exit(1);
+      }
+      _hmap[pid] = f;           // parent
+      deliver();
+      return pid;
+    }
+
+    void kill(child_id pid)
+    {
+      throw_errno_if_minus_one("kill(2) failed", boost::bind(&::kill, pid, SIGKILL));
+      deliver();
+    }
+
+  private:
+    typedef std::map<child_id,exit_handler>     handler_map;
+    handler_map                                 _hmap;
+    bool                                        _scheduled;
+
+    static void handle_signal(int) { }
+
+    void reschedule()
+    {
+      if (!_scheduled && !_hmap.empty())
+      {
+        schedule(boost::bind(&system::wait_for_children, this), 1u);
+        _scheduled = true;
+      }
+    }
+
+    void wait_for_children()
+    {
+      _scheduled = false;
+      deliver();
+    }
+
+    void deliver()
+    {
+      for (;;)
+      {
+        int status;
+        child_id const pid( throw_errno_if_minus_one("waitpid() failed", boost::bind(&waitpid, -1, &status, WNOHANG)) );
+        if (pid == 0) return reschedule();
+        handler_map::iterator const i( _hmap.find(pid) );
+        if (i != _hmap.end())
+        {
+          exit_handler f;
+          i->second.swap(f);
+          _hmap.erase(i);
+          f(status);
+        }
+      }
+    }
+  };
+
+  void print(system::exit_code ec)
+  {
+    if (WIFEXITED(ec))            std::cout << "child process returned " << WEXITSTATUS(ec);
+    else if (WIFSIGNALED(ec))     std::cout << "child process terminated by signal " << WTERMSIG(ec)
+                                            << (WCOREDUMP(ec) ? " (core dumped)" : "");
+    else                          std::cout << "child process returned unknown code " << ec;
+    std::cout << std::endl;
+  }
+
 }
 
 #endif // POSTMASTER_IO_HPP_2007_11_18
