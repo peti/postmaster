@@ -5,6 +5,12 @@
 
 struct print
 {
+  void operator() (postmaster::io::system::exit_code e) const
+  {
+    postmaster::io::system::print_exit_code(std::cout, e);
+    std::cout << std::endl;
+  }
+
   void operator() (std::string const * str) const
   {
     std::cout << (str ? str->c_str() : "error") << std::endl;
@@ -83,7 +89,6 @@ int main(int, char**)
                << &input[sizeof(input)-1] - r << " left."
                << endl;
 
-#if 0
   resolver io;
   {
     io::socket sin( create_socket(io, STDIN_FILENO) );   close_on_destruction(sin, false);
@@ -92,6 +97,20 @@ int main(int, char**)
          << "standard output = socket " << sout << endl;
     on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, sin));
     on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, sout));
+  }
+  {
+    char const * const argv[] = { "/bin/env", 0 };
+    char const * const envp[] = { "test-variable=test contents", 0 };
+    io.execute(argv, envp, print());
+  }
+  {
+    char const * argv[] = { "/usr/bin/sleep", 0, 0 };
+    argv[1] = "1"; io.execute(argv, print());
+    argv[1] = "2"; io.execute(argv, print());
+    argv[1] = "3"; io.execute(argv, print());
+    argv[1] = "4";
+    io::system::child_id const pid( io.execute(argv, print()) );
+    io.schedule(bind(&io::system::kill, &io, pid), 1u);
   }
 
   io.schedule(bind(print_id, 3u), 1u);
@@ -116,7 +135,6 @@ int main(int, char**)
       std::cout << "*** I/O main loop caught: " << e.what() << endl;
     }
   }
-#endif
 
   cout << "postmaster shut down" << endl;
   return 0;

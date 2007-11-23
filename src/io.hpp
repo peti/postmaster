@@ -41,7 +41,7 @@ namespace postmaster
   // Throw system errors, but re-try on EINTR.
 
   template <class Result, class Cond, class Func>
-  Result throw_errno_if(Cond failure, char const * ctx, Func f)
+  Result throw_errno_if(Cond failure, Func f, char const * ctx)
   {
     Result r;
     for (r = f(); failure(r); r = f())
@@ -56,16 +56,127 @@ namespace postmaster
   }
 
   template <class Func>
-  int throw_errno_if_minus_one(char const * ctx, Func f)
+  int throw_errno_if_minus_one(Func f, char const * ctx)
   {
-    return throw_errno_if<int>(boost::bind(std::equal_to<int>(), -1, _1), ctx, f);
+    return throw_errno_if<int>(boost::bind(std::equal_to<int>(), -1, _1), f, ctx);
   }
 
   namespace io
   {
+    // Child process management.
+
+    class system : private boost::noncopyable
+    {
+    public:
+      typedef int                                 exit_code;
+      typedef boost::function<void (exit_code)>   exit_handler;
+      typedef pid_t                               child_id;
+
+      system()
+      {
+        struct sigaction a;     // disable all signals but SIGCHLD
+        std::memset(&a, 0, sizeof(a));
+        a.sa_handler = SIG_IGN;
+        for (int i(0); i != 32; ++i) sigaction(i, &a, 0);
+        a.sa_handler = &handle_signal;
+        a.sa_flags = SA_NOCLDSTOP | SA_NODEFER;
+        throw_errno_if_minus_one( boost::bind(&sigaction, SIGCHLD, &a, static_cast<struct sigaction *>(0))
+                                , "cannot install SIGCHLD handler"
+                                );
+        sigset_t all;
+        throw_errno_if_minus_one(boost::bind(&sigfillset, &all), "sigfillset() failed");
+        throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_BLOCK, &all, &_orig_signalset), "sigprocmask()");
+      }
+
+      ~system()
+      {
+        throw_errno_if_minus_one( boost::bind(&sigprocmask, SIG_SETMASK, &_orig_signalset, static_cast<sigset_t *>(0))
+                                , "sigprocmask() failed"
+                                );
+      }
+
+      child_id execute(char const * const * argv, exit_handler const & f)
+      {
+        return execute(argv, environ, f);
+      }
+
+      child_id execute(char const * const * argv, char const * const * envp, exit_handler const & f)
+      {
+        BOOST_ASSERT(f);
+        BOOST_ASSERT(argv); BOOST_ASSERT(argv[0]); BOOST_ASSERT(argv[0][0]);
+        BOOST_ASSERT(envp);
+        child_id const pid( throw_errno_if_minus_one(boost::bind(&fork), "cannot fork() new process") );
+        if (pid == 0)             // child
+        {
+          execve(argv[0], const_cast<char **>(argv), const_cast<char **>(envp));
+          std::cerr << "execve(" << argv[0] << ") failed: " << system_error(errno, errno_ecat).what() << std::endl;
+          _Exit(1);
+        }
+        _hmap[pid] = f;           // parent
+        return pid;
+      }
+
+      void kill(child_id pid)
+      {
+        if (::kill(pid, SIGKILL) == -1)
+          if (errno != ESRCH)
+            throw system_error(errno, errno_ecat, "kill(2) failed");
+      }
+
+      void deliver_exit_codes()
+      {
+        while (!_hmap.empty())
+        {
+          int status;
+          child_id const pid( throw_errno_if_minus_one(boost::bind(&waitpid, -1, &status, WNOHANG), "waitpid() failed") );
+          if (pid == 0) return;
+          handler_map::iterator const i( _hmap.find(pid) );
+          if (i != _hmap.end())
+          {
+            exit_handler f;
+            i->second.swap(f);
+            _hmap.erase(i);
+            f(status);
+          }
+        }
+      }
+
+      static void print_exit_code(std::ostream & os, system::exit_code ec)
+      {
+        if (WIFEXITED(ec))            os << "child process returned " << WEXITSTATUS(ec);
+        else if (WIFSIGNALED(ec))     os << "child process terminated by signal " << WTERMSIG(ec)
+                                         << (WCOREDUMP(ec) ? " (core dumped)" : "");
+        else                          os << "child process returned unknown code " << ec;
+      }
+
+    protected:
+      class signal_scope : private boost::noncopyable
+      {
+        sigset_t _orig_set;
+
+      public:
+        signal_scope()
+        {
+          sigset_t all;
+          throw_errno_if_minus_one(boost::bind(&sigfillset, &all), "sigfillset() failed");
+          throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_UNBLOCK, &all, &_orig_set), "sigprocmask()");
+        }
+        ~signal_scope()
+        {
+          throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_SETMASK, &_orig_set, static_cast<sigset_t *>(0)), "sigprocmask() failed");
+        }
+      };
+
+    private:
+      typedef std::map<child_id,exit_handler>   handler_map;
+      handler_map                               _hmap;
+      sigset_t                                  _orig_signalset;
+      static void handle_signal(int) { }
+    };
+
     // Co-operative multi-tasking scheduler.
 
-    class core : private boost::noncopyable
+    class core : public system
     {
     public:
       typedef boost::function0<void>                    task;
@@ -77,12 +188,12 @@ namespace postmaster
     public:
       typedef task_queue_entry                          task_id;
 
-      core() { update(); }
+      core() { update_core_time(); }
 
       task_id schedule(task const & t, second_t from_now = 0u)
       {
         BOOST_ASSERT(t);
-        if (from_now > 0) update();
+        if (from_now > 0) update_core_time();
         task_queue::iterator const i( _tasks.insert(std::make_pair(_now + from_now, t)) );
         return std::make_pair(i->first, i);
       }
@@ -100,25 +211,29 @@ namespace postmaster
 
       second_t run()
       {
-        while (!_tasks.empty())
+        for (deliver_exit_codes(); !_tasks.empty(); deliver_exit_codes())
         {
-          task_queue::iterator const i( _tasks.begin() );
-          if (i->first > _now)
+          do
           {
-            update();
+            task_queue::iterator const i( _tasks.begin() );
             if (i->first > _now)
-              return i->first - _now;
+            {
+              update_core_time();
+              if (i->first > _now)
+                return i->first - _now;
+            }
+            task t;
+            t.swap(i->second);
+            _tasks.erase(i);
+            t();
           }
-          task t;
-          t.swap(i->second);
-          _tasks.erase(i);
-          t();
+          while (!_tasks.empty());
         }
         return 0u;
       }
 
     protected:
-      void update() { _now = std::time(0); }
+      void update_core_time() { _now = std::time(0); }
 
     private:
       time_t            _now;
@@ -135,20 +250,42 @@ namespace postmaster
       explicit scheduler(unsigned int size_hint = 512u)
       {
         BOOST_ASSERT(size_hint <= static_cast<unsigned int>(std::numeric_limits<int>::max()));
-        _epoll_fd = throw_errno_if_minus_one( "epoll_create(2) failed"
-                                            , boost::bind(&epoll_create, static_cast<int>(size_hint))
+        _epoll_fd = throw_errno_if_minus_one( boost::bind(&epoll_create, static_cast<int>(size_hint))
+                                            , "epoll_create(2) failed"
                                             );
       }
 
       ~scheduler()
       {
-        throw_errno_if_minus_one("epoll_create(2) failed", boost::bind(&close, _epoll_fd));
+        throw_errno_if_minus_one(boost::bind(&close, _epoll_fd), "epoll_create(2) failed");
       }
 
       void run()
       {
         for (second_t next_event( core::run() ); !_handlers.empty(); next_event = core::run())
-          run_epoll(next_event ? static_cast<int>(next_event) * 1000 : -1);
+        {
+          epoll_event ev[32u];
+          int rc;
+          int const timeout( next_event ? static_cast<int>(next_event) * 1000 : -1 );
+          {
+            signal_scope const allow_signals;
+            rc = epoll_wait(_epoll_fd, ev, sizeof(ev) / sizeof(epoll_event), timeout);
+          }
+          if (rc == -1)
+          {
+            if (errno == EINTR) continue;
+            else                throw system_error(errno, errno_ecat, "epoll_wait() failed");
+          }
+          update_core_time();
+          for (int i(0); i != rc; ++i)
+          {
+            BOOST_ASSERT(ev[i].data.fd >= 0);
+            BOOST_ASSERT(_handlers.find(ev[i].data.fd) != _handlers.end());
+            handler & h( _handlers[ev[i].data.fd] );
+            if ((ev[i].events & EPOLLIN)  && h.first)  schedule(h.first);
+            if ((ev[i].events & EPOLLOUT) && h.second) schedule(h.second);
+          }
+        }
       }
 
       void register_socket(socket_id s)
@@ -162,8 +299,8 @@ namespace postmaster
           epoll_event ev;
           ev.data.fd = s;
           ev.events  = 0;
-          throw_errno_if_minus_one( "epoll_ctl() failed to add a socket"
-                                  , boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_ADD, s, &ev)
+          throw_errno_if_minus_one( boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_ADD, s, &ev)
+                                  , "epoll_ctl() failed to add a socket"
                                   );
         }
         catch(...)
@@ -183,8 +320,8 @@ namespace postmaster
         epoll_event ev;
         ev.data.fd = s;
         ev.events  = 0;
-        throw_errno_if_minus_one( "epoll_ctl() failed to delete a socket"
-                                , boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_DEL, s, &ev)
+        throw_errno_if_minus_one( boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_DEL, s, &ev)
+                                , "epoll_ctl() failed to delete a socket"
                                 );
       }
 
@@ -215,30 +352,12 @@ namespace postmaster
       socket_id         _epoll_fd;
       handler_map       _handlers;
 
-      void run_epoll(int timeout)
-      {
-        epoll_event ev[32u];
-        int const rc( throw_errno_if_minus_one( "epoll_wait() failed"
-                                              , boost::bind(&epoll_wait, _epoll_fd, ev, sizeof(ev) / sizeof(epoll_event), timeout)
-                                              )
-                    );
-        update();
-        for (int i(0); i != rc; ++i)
-        {
-          BOOST_ASSERT(ev[i].data.fd >= 0);
-          BOOST_ASSERT(_handlers.find(ev[i].data.fd) != _handlers.end());
-          handler & h( _handlers[ev[i].data.fd] );
-          if ((ev[i].events & EPOLLIN)  && h.first)  schedule(h.first);
-          if ((ev[i].events & EPOLLOUT) && h.second) schedule(h.second);
-        }
-      }
-
       void modify_epoll(socket_id s, handler & h, char const * ctxid)
       {
         epoll_event ev;
         ev.data.fd = s;
         ev.events  = (h.first ? EPOLLIN : 0) | (h.second ? EPOLLOUT : 0);
-        throw_errno_if_minus_one(ctxid, boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_MOD, s, &ev));
+        throw_errno_if_minus_one(boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_MOD, s, &ev), ctxid);
       }
     };
 
@@ -256,7 +375,7 @@ namespace postmaster
       {
         _io.unregister_socket(_sock);
         if (_close_on_destruction)
-          throw_errno_if_minus_one("close() failed", boost::bind(&close, _sock));
+          throw_errno_if_minus_one(boost::bind(&close, _sock), "close() failed");
       }
 
       friend socket create_socket(scheduler & io, int fd)
@@ -372,9 +491,9 @@ namespace postmaster
                                                               | adns_if_nosigpipe
                                                               | adns_if_checkc_freq
                                                               ));
-        throw_rc_if_not_zero("cannot initialize adns resolver", boost::bind(&adns_init, &_state, flags, static_cast<FILE*>(0)));
+        throw_rc_if_not_zero(boost::bind(&adns_init, &_state, flags, static_cast<FILE*>(0)), "cannot initialize adns resolver");
         BOOST_ASSERT(_state);
-        update();
+        update_time();
       }
 
       ~resolver()
@@ -438,8 +557,8 @@ namespace postmaster
       {
         schedule_deliver();
         adns_query qid;
-        throw_rc_if_not_zero( "adns_query() failed"
-                            , boost::bind(&adns_submit, _state, owner, rrtype, static_cast<adns_queryflags>(flags), static_cast<FILE*>(0), &qid)
+        throw_rc_if_not_zero( boost::bind(&adns_submit, _state, owner, rrtype, static_cast<adns_queryflags>(flags), static_cast<FILE*>(0), &qid)
+                            , "adns_query() failed"
                             );
         _qset[qid].swap(f);
       }
@@ -454,7 +573,7 @@ namespace postmaster
         boost::scoped_array<pollfd> fds( new pollfd[ADNS_POLLFDS_RECOMMENDED] );
         int nfds(ADNS_POLLFDS_RECOMMENDED);
         int timeout;
-        update();
+        update_time();
         for (int rc( ERANGE ); rc == ERANGE; /**/)
         {
           timeout = -1;
@@ -515,7 +634,7 @@ namespace postmaster
       timeval           _now;
       core::task_id     _timeout;
 
-      void update()
+      void update_time()
       {
         _now.tv_sec  = now();
         _now.tv_usec = 0;
@@ -525,15 +644,15 @@ namespace postmaster
       {
         std::cout << "process adns fd " << fd << std::endl;
         schedule_deliver();
-        update();
-        throw_rc_if_not_zero("adns processing callback failed", boost::bind(f, _state, fd, &_now));
+        update_time();
+        throw_rc_if_not_zero(boost::bind(f, _state, fd, &_now), "adns processing callback failed");
       }
 
       void process_timeout()
       {
         std::cout << "process adns timeouts" << std::endl;
         schedule_deliver();
-        update();
+        update_time();
         adns_processtimeouts(_state, &_now);
       }
 
@@ -550,6 +669,7 @@ namespace postmaster
           int const       rc( adns_check(_state, &qid, &a, 0) );
           switch (rc)
           {
+            case EINTR:   continue;
             case ESRCH:   BOOST_ASSERT(_qset.empty());  return release_fds();
             case EAGAIN:  BOOST_ASSERT(!_qset.empty()); return register_fds();
             case 0:       break;
@@ -672,113 +792,13 @@ namespace postmaster
       }
 
       template <class Func>
-      static void throw_rc_if_not_zero(char const * ctx, Func f)
+      static void throw_rc_if_not_zero(Func f, char const * ctx)
       {
         int const rc( f() );
         if (rc != 0) { system_error error(rc, errno_ecat, ctx); throw error; }
       }
     };
   }
-
-  class system : public io::resolver
-  {
-  public:
-    typedef int                                 exit_code;
-    typedef boost::function<void (exit_code)>   exit_handler;
-    typedef pid_t                               child_id;
-
-    system() : _scheduled(false)
-    {
-      struct sigaction a;
-      std::memset(&a, 0, sizeof(a));
-      a.sa_handler = SIG_IGN;
-      for (int i(0); i != 32; ++i) sigaction(i, &a, 0);
-      a.sa_handler = &handle_signal;
-      a.sa_flags = SA_NOCLDSTOP | SA_NODEFER;
-      throw_errno_if_minus_one( "cannot install SIGCHLD handler"
-                              , boost::bind(&sigaction, SIGCHLD, &a, static_cast<struct sigaction *>(0))
-                              );
-    }
-
-    child_id execute(exit_handler const & f, char const * filepath, char const * const * argv)
-    {
-      return execute(f, filepath, argv, environ);
-    }
-
-    child_id execute(exit_handler const & f, char const * filepath, char const * const * argv, char const * const * envp)
-    {
-      BOOST_ASSERT(f);
-      BOOST_ASSERT(filepath); BOOST_ASSERT(filepath[0]);
-      BOOST_ASSERT(argv); BOOST_ASSERT(argv[0]);
-      BOOST_ASSERT(envp);
-      child_id const pid( throw_errno_if_minus_one("cannot fork() new process", boost::bind(&fork)) );
-      if (pid == 0)             // child
-      {
-        execve(filepath, const_cast<char **>(argv), const_cast<char **>(envp));
-        std::cerr << "execve(" << filepath << ") failed: " << system_error(errno, errno_ecat).what() << std::endl;
-        _Exit(1);
-      }
-      _hmap[pid] = f;           // parent
-      deliver();
-      return pid;
-    }
-
-    void kill(child_id pid)
-    {
-      throw_errno_if_minus_one("kill(2) failed", boost::bind(&::kill, pid, SIGKILL));
-      deliver();
-    }
-
-  private:
-    typedef std::map<child_id,exit_handler>     handler_map;
-    handler_map                                 _hmap;
-    bool                                        _scheduled;
-
-    static void handle_signal(int) { }
-
-    void reschedule()
-    {
-      if (!_scheduled && !_hmap.empty())
-      {
-        schedule(boost::bind(&system::wait_for_children, this), 1u);
-        _scheduled = true;
-      }
-    }
-
-    void wait_for_children()
-    {
-      _scheduled = false;
-      deliver();
-    }
-
-    void deliver()
-    {
-      for (;;)
-      {
-        int status;
-        child_id const pid( throw_errno_if_minus_one("waitpid() failed", boost::bind(&waitpid, -1, &status, WNOHANG)) );
-        if (pid == 0) return reschedule();
-        handler_map::iterator const i( _hmap.find(pid) );
-        if (i != _hmap.end())
-        {
-          exit_handler f;
-          i->second.swap(f);
-          _hmap.erase(i);
-          f(status);
-        }
-      }
-    }
-  };
-
-  void print(system::exit_code ec)
-  {
-    if (WIFEXITED(ec))            std::cout << "child process returned " << WEXITSTATUS(ec);
-    else if (WIFSIGNALED(ec))     std::cout << "child process terminated by signal " << WTERMSIG(ec)
-                                            << (WCOREDUMP(ec) ? " (core dumped)" : "");
-    else                          std::cout << "child process returned unknown code " << ec;
-    std::cout << std::endl;
-  }
-
 }
 
 #endif // POSTMASTER_IO_HPP_2007_11_18

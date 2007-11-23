@@ -32,5 +32,4 @@ test-suite postmaster_tests
     [ run test-pattern-matching.cpp pm_routing  /boost//unit_test_framework ]
     [ run test-target.cpp pm_target pm_error    /boost//unit_test_framework ]
     [ run test-routing.cpp pm_routing           /boost//unit_test_framework ]
-    [ run test-process-pool.cpp                 /boost//unit_test_framework pm_error ]
   ;
