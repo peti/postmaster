@@ -21,8 +21,6 @@ lib pm_routing
 
 lib pm_target  : target.cpp  : <use>/boost ;
 
-exe hook : hook.cpp pm_error : <library>/ioxx//ioxx ;
-
 test-suite postmaster_tests
   : [ run test-address-parser.cpp               /boost//unit_test_framework /rfc2822//rfc2822 ]
     [ run test-nocase-string.cpp                /boost//unit_test_framework ]
