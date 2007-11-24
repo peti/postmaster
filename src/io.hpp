@@ -299,9 +299,7 @@ namespace postmaster
           epoll_event ev;
           ev.data.fd = s;
           ev.events  = 0;
-          throw_errno_if_minus_one( boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_ADD, s, &ev)
-                                  , "registering new socket"
-                                  );
+          throw_errno_if_minus_one(boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_ADD, s, &ev), "registering new socket");
         }
         catch(...)
         {
@@ -320,9 +318,7 @@ namespace postmaster
         epoll_event ev;
         ev.data.fd = s;
         ev.events  = 0;
-        throw_errno_if_minus_one( boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_DEL, s, &ev)
-                                , "unregistering socket"
-                                );
+        throw_errno_if_minus_one(boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_DEL, s, &ev), "unregistering socket");
       }
 
       void on_input(socket_id s, task t)
@@ -645,9 +641,7 @@ namespace postmaster
         std::cout << "process adns fd " << fd << std::endl;
         schedule_deliver();
         update_time();
-        throw_rc_if_not_zero( boost::bind(f, _state, fd, &_now)
-                            , "process DNS I/O"
-                            );
+        throw_rc_if_not_zero(boost::bind(f, _state, fd, &_now), "process DNS I/O");
       }
 
       void process_timeout()
