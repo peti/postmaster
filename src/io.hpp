@@ -1,6 +1,35 @@
 #ifndef POSTMASTER_IO_HPP_2007_11_18
 #define POSTMASTER_IO_HPP_2007_11_18
 
+/**  \file  io.hpp
+     \brief Asynchronous I/O Core
+
+The I/O core is basically a register of callback functions, each of them
+attached to one of the following events:
+
+ - a socket becomes readable or writable,
+ - a child process terminates (and produces an exit code),
+ - a DNS response has been received, or
+ - a pre-set timeout expires.
+
+The main event loop is structured as follows:
+
+ 1. Block all signals.
+ 2. Collect exit codes from child processes and invoke the attached callbacks.
+ 3. Invoke all scheduled ready tasks.
+ 4. Are there still sockets or timeouts registered? No: shut down; yes: go on.
+ 5. Enable signals.
+ 6. Use epoll_wait() to block until there is socket I/O, a signal, or a timeout.
+ 7. Did we have socket activity? Yes: schedule the attached callbacks as ready.
+ 8. Repeat from 1.
+
+With the exception of poll_wait(), all other system calls are performed with
+signals blocked, so there shouldn't be any interruptions.
+
+The implementation is re-entrant and consequently unaware of multi-threading.
+*/
+
+#include "error.hpp"
 #include <boost/noncopyable.hpp>
 #include <boost/function/function0.hpp>
 #include <boost/function/function1.hpp>
@@ -8,8 +37,6 @@
 #include <boost/scoped_array.hpp>
 #include <boost/compatibility/cpp_c_headers/cstddef>
 #include <boost/compatibility/cpp_c_headers/ctime>
-#include <boost/compatibility/cpp_c_headers/cerrno>
-#include <boost/system/system_error.hpp>
 #include <boost/bind.hpp>
 #include <map>
 #include <functional>
@@ -26,6 +53,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 
+
 namespace postmaster
 {
   // Basic system types for this platform.
@@ -34,32 +62,6 @@ namespace postmaster
   using std::ptrdiff_t;
   using std::time_t;
   typedef unsigned int second_t;
-
-  using boost::system::errno_ecat;
-  using boost::system::system_error;
-
-  // Throw system errors, but re-try on EINTR.
-
-  template <class Result, class Cond, class Func>
-  Result throw_errno_if(Cond failure, Func f, char const * ctx)
-  {
-    Result r;
-    for (r = f(); failure(r); r = f())
-    {
-      if (errno != EINTR)
-      {
-        system_error error(errno, errno_ecat, ctx);
-        throw error;
-      }
-    }
-    return r;
-  }
-
-  template <class Func>
-  int throw_errno_if_minus_one(Func f, char const * ctx)
-  {
-    return throw_errno_if<int>(boost::bind(std::equal_to<int>(), -1, _1), f, ctx);
-  }
 
   namespace io
   {
@@ -84,14 +86,14 @@ namespace postmaster
                                 , "cannot install SIGCHLD handler"
                                 );
         sigset_t all;
-        throw_errno_if_minus_one(boost::bind(&sigfillset, &all), "sigfillset() failed");
+        throw_errno_if_minus_one(boost::bind(&sigfillset, &all), "sigfillset()");
         throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_BLOCK, &all, &_orig_signalset), "sigprocmask()");
       }
 
       ~system()
       {
         throw_errno_if_minus_one( boost::bind(&sigprocmask, SIG_SETMASK, &_orig_signalset, static_cast<sigset_t *>(0))
-                                , "sigprocmask() failed"
+                                , "sigprocmask()"
                                 );
       }
 
@@ -109,7 +111,7 @@ namespace postmaster
         if (pid == 0)             // child
         {
           execve(argv[0], const_cast<char **>(argv), const_cast<char **>(envp));
-          std::cerr << "execve(" << argv[0] << ") failed: " << system_error(errno, errno_ecat).what() << std::endl;
+          std::cerr << "execve(" << argv[0] << "): " << system_error(errno, errno_ecat).what() << std::endl;
           _Exit(1);
         }
         _hmap[pid] = f;           // parent
@@ -120,7 +122,7 @@ namespace postmaster
       {
         if (::kill(pid, SIGKILL) == -1)
           if (errno != ESRCH)
-            throw system_error(errno, errno_ecat, "kill(2) failed");
+            throw system_error(errno, errno_ecat, "kill()");
       }
 
       void deliver_exit_codes()
@@ -128,7 +130,7 @@ namespace postmaster
         while (!_hmap.empty())
         {
           int status;
-          child_id const pid( throw_errno_if_minus_one(boost::bind(&waitpid, -1, &status, WNOHANG), "waitpid() failed") );
+          child_id const pid( throw_errno_if_minus_one(boost::bind(&waitpid, -1, &status, WNOHANG), "waitpid()") );
           if (pid == 0) return;
           handler_map::iterator const i( _hmap.find(pid) );
           if (i != _hmap.end())
@@ -158,12 +160,12 @@ namespace postmaster
         signal_scope()
         {
           sigset_t all;
-          throw_errno_if_minus_one(boost::bind(&sigfillset, &all), "sigfillset() failed");
+          throw_errno_if_minus_one(boost::bind(&sigfillset, &all), "sigfillset()");
           throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_UNBLOCK, &all, &_orig_set), "sigprocmask()");
         }
         ~signal_scope()
         {
-          throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_SETMASK, &_orig_set, static_cast<sigset_t *>(0)), "sigprocmask() failed");
+          throw_errno_if_minus_one(boost::bind(&sigprocmask, SIG_SETMASK, &_orig_set, static_cast<sigset_t *>(0)), "sigprocmask()");
         }
       };
 
@@ -251,13 +253,15 @@ namespace postmaster
       {
         BOOST_ASSERT(size_hint <= static_cast<unsigned int>(std::numeric_limits<int>::max()));
         _epoll_fd = throw_errno_if_minus_one( boost::bind(&epoll_create, static_cast<int>(size_hint))
-                                            , "epoll_create(2) failed"
+                                            , "epoll_create(2)"
                                             );
       }
 
       ~scheduler()
       {
-        throw_errno_if_minus_one(boost::bind(&close, _epoll_fd), "epoll_create(2) failed");
+        throw_errno_if_minus_one( boost::bind(&close, _epoll_fd)
+                                , "close() epoll socket"
+                                );
       }
 
       void run()
@@ -274,7 +278,7 @@ namespace postmaster
           if (rc == -1)
           {
             if (errno == EINTR) continue;
-            else                throw system_error(errno, errno_ecat, "epoll_wait() failed");
+            else                throw system_error(errno, errno_ecat, "epoll_wait()");
           }
           update_core_time();
           for (int i(0); i != rc; ++i)
@@ -300,7 +304,7 @@ namespace postmaster
           ev.data.fd = s;
           ev.events  = 0;
           throw_errno_if_minus_one( boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_ADD, s, &ev)
-                                  , "epoll_ctl() failed to add a socket"
+                                  , "registering new socket"
                                   );
         }
         catch(...)
@@ -321,7 +325,7 @@ namespace postmaster
         ev.data.fd = s;
         ev.events  = 0;
         throw_errno_if_minus_one( boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_DEL, s, &ev)
-                                , "epoll_ctl() failed to delete a socket"
+                                , "unregistering socket"
                                 );
       }
 
@@ -332,7 +336,7 @@ namespace postmaster
         handler & h( _handlers[s] );
         h.first.swap(t);
         if ( static_cast<bool>(t) != static_cast<bool>(h.first) )
-          modify_epoll(s, h, "scheduler::on_input() failed");
+          modify_epoll(s, h, "cannot register on_input for socket");
       }
 
       void on_output(socket_id s, task t)
@@ -342,7 +346,7 @@ namespace postmaster
         handler & h( _handlers[s] );
         h.second.swap(t);
         if ( static_cast<bool>(t) != static_cast<bool>(h.second) )
-          modify_epoll(s, h, "scheduler::on_output() failed");
+          modify_epoll(s, h, "cannot register on_output for socket");
       }
 
     private:
@@ -352,7 +356,7 @@ namespace postmaster
       socket_id         _epoll_fd;
       handler_map       _handlers;
 
-      void modify_epoll(socket_id s, handler & h, char const * ctxid)
+      void modify_epoll(socket_id s, handler const & h, std::string const & ctxid)
       {
         epoll_event ev;
         ev.data.fd = s;
@@ -375,7 +379,7 @@ namespace postmaster
       {
         _io.unregister_socket(_sock);
         if (_close_on_destruction)
-          throw_errno_if_minus_one(boost::bind(&close, _sock), "close() failed");
+          throw_errno_if_minus_one(boost::bind(&close, _sock), "close()");
       }
 
       friend socket create_socket(scheduler & io, int fd)
@@ -558,7 +562,7 @@ namespace postmaster
         schedule_deliver();
         adns_query qid;
         throw_rc_if_not_zero( boost::bind(&adns_submit, _state, owner, rrtype, static_cast<adns_queryflags>(flags), static_cast<FILE*>(0), &qid)
-                            , "adns_query() failed"
+                            , "submit DNS query"
                             );
         _qset[qid].swap(f);
       }
@@ -582,7 +586,7 @@ namespace postmaster
           {
             case ERANGE:        BOOST_ASSERT(nfds > 0); fds.reset( new pollfd[nfds] ); break;
             case 0:             break;
-            default:            throw system_error(rc, errno_ecat, "adns_beforepoll() failed");
+            default:            throw system_error(rc, errno_ecat, "adns_beforepoll()");
           }
         }
         BOOST_ASSERT(nfds >= 0);
@@ -645,7 +649,9 @@ namespace postmaster
         std::cout << "process adns fd " << fd << std::endl;
         schedule_deliver();
         update_time();
-        throw_rc_if_not_zero(boost::bind(f, _state, fd, &_now), "adns processing callback failed");
+        throw_rc_if_not_zero( boost::bind(f, _state, fd, &_now)
+                            , "process DNS I/O"
+                            );
       }
 
       void process_timeout()
@@ -673,7 +679,7 @@ namespace postmaster
             case ESRCH:   BOOST_ASSERT(_qset.empty());  return release_fds();
             case EAGAIN:  BOOST_ASSERT(!_qset.empty()); return register_fds();
             case 0:       break;
-            default:      throw system_error(rc, errno_ecat, "adns_check() failed");
+            default:      throw system_error(rc, errno_ecat, "adns_check()");
           }
           BOOST_ASSERT(a);
           ans.reset(a, &::free);
@@ -792,7 +798,7 @@ namespace postmaster
       }
 
       template <class Func>
-      static void throw_rc_if_not_zero(Func f, char const * ctx)
+      static void throw_rc_if_not_zero(Func f, std::string const & ctx)
       {
         int const rc( f() );
         if (rc != 0) { system_error error(rc, errno_ecat, ctx); throw error; }
