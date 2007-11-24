@@ -1,33 +1,33 @@
 #ifndef POSTMASTER_IO_HPP_2007_11_18
 #define POSTMASTER_IO_HPP_2007_11_18
 
-/**  \file  io.hpp
-     \brief Asynchronous I/O Core
-
-The I/O core is basically a register of callback functions, each of them
-attached to one of the following events:
-
- - a socket becomes readable or writable,
- - a child process terminates (and produces an exit code),
- - a DNS response has been received, or
- - a pre-set timeout expires.
-
-The main event loop is structured as follows:
-
- 1. Block all signals.
- 2. Collect exit codes from child processes and invoke the attached callbacks.
- 3. Invoke all scheduled ready tasks.
- 4. Are there still sockets or timeouts registered? No: shut down; yes: go on.
- 5. Enable signals.
- 6. Use epoll_wait() to block until there is socket I/O, a signal, or a timeout.
- 7. Did we have socket activity? Yes: schedule the attached callbacks as ready.
- 8. Repeat from 1.
-
-With the exception of poll_wait(), all other system calls are performed with
-signals blocked, so there shouldn't be any interruptions.
-
-The implementation is re-entrant and consequently unaware of multi-threading.
-*/
+/** \file  io.hpp
+ *  \brief Asynchronous I/O Core
+ *
+ * The I/O core is basically a register of callback functions, each of them
+ * attached to one of the following events:
+ *
+ *  - a socket becomes readable or writable,
+ *  - a child process terminates (and produces an exit code),
+ *  - a DNS response has been received, or
+ *  - a pre-set timeout expires.
+ *
+ * The main event loop is structured as follows:
+ *
+ *  1. Block all signals.
+ *  2. Collect exit codes from child processes; invoke the attached callbacks.
+ *  3. Invoke all scheduled ready tasks.
+ *  4. Are there still sockets or timeouts registered? No: shut down.
+ *  5. Enable signals.
+ *  6. Block with epoll_wait() until there is socket I/O, a signal, or timeout.
+ *  7. Did we have socket activity? Yes: schedule the attached callbacks.
+ *  8. Repeat from 1.
+ *
+ * With the exception of poll_wait(), all other system calls are performed
+ * while signals are blocked, so there should be no interruptions.
+ *
+ * The implementation is re-entrant.
+ */
 
 #include "error.hpp"
 #include <boost/noncopyable.hpp>
@@ -252,16 +252,12 @@ namespace postmaster
       explicit scheduler(unsigned int size_hint = 512u)
       {
         BOOST_ASSERT(size_hint <= static_cast<unsigned int>(std::numeric_limits<int>::max()));
-        _epoll_fd = throw_errno_if_minus_one( boost::bind(&epoll_create, static_cast<int>(size_hint))
-                                            , "epoll_create(2)"
-                                            );
+        _epoll_fd = throw_errno_if_minus_one(boost::bind(&epoll_create, static_cast<int>(size_hint)), "epoll_create(2)");
       }
 
       ~scheduler()
       {
-        throw_errno_if_minus_one( boost::bind(&close, _epoll_fd)
-                                , "close() epoll socket"
-                                );
+        throw_errno_if_minus_one(boost::bind(&close, _epoll_fd), "close() epoll socket");
       }
 
       void run()
