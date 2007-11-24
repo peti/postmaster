@@ -24,7 +24,9 @@
  *  8. Repeat from 1.
  *
  * With the exception of poll_wait(), all other system calls are performed
- * while signals are blocked, so there should be no interruptions.
+ * while signals are blocked, so there should be no interruptions. If EINTR
+ * does occur for whatever reason, the implementation ignores it and re-tries
+ * the system call. EINTR never causes an exception.
  *
  * The implementation is re-entrant.
  */
@@ -52,7 +54,6 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/wait.h>
-
 
 namespace postmaster
 {
@@ -264,7 +265,7 @@ namespace postmaster
       {
         for (second_t next_event( core::run() ); !_handlers.empty(); next_event = core::run())
         {
-          epoll_event ev[32u];
+          epoll_event ev[128u];
           int rc;
           int const timeout( next_event ? static_cast<int>(next_event) * 1000 : -1 );
           {
@@ -355,113 +356,6 @@ namespace postmaster
         ev.events  = (h.first ? EPOLLIN : 0) | (h.second ? EPOLLOUT : 0);
         throw_errno_if_minus_one(boost::bind(&epoll_ctl, _epoll_fd, EPOLL_CTL_MOD, s, &ev), ctxid);
       }
-    };
-
-    // Basic I/O interface.
-
-    class system_socket;
-    typedef boost::shared_ptr<system_socket> socket;
-
-    class system_socket : private boost::noncopyable
-    {
-    public:
-      typedef scheduler::task handler;
-
-      ~system_socket()
-      {
-        _io.unregister_socket(_sock);
-        if (_close_on_destruction)
-          throw_errno_if_minus_one(boost::bind(&close, _sock), "close()");
-      }
-
-      friend socket create_socket(scheduler & io, int fd)
-      {
-        socket s;
-        s.reset( new system_socket(io, fd) );
-        return s;
-      }
-
-      friend void on_input(socket s, handler f, second_t timeout = 0, handler h = handler())
-      {
-        s->_input.set<&scheduler::on_input>(s, f, timeout, h);
-      }
-
-      friend void on_output(socket s, handler f, second_t timeout = 0, handler h = handler())
-      {
-        s->_output.set<&scheduler::on_output>(s, f, timeout, h);
-      }
-
-      friend void close_on_destruction(socket s, bool b)
-      {
-        s->_close_on_destruction = b;
-      }
-
-    private:
-      system_socket(scheduler & io, int fd) : _io(io), _sock(fd), _close_on_destruction(true)
-      {
-        BOOST_ASSERT(fd >= 0);
-        _io.register_socket(_sock);
-      }
-
-      scheduler &               _io;
-      int const                 _sock;
-      bool                      _close_on_destruction;
-
-      typedef void (scheduler::*registrar)(scheduler::socket_id, scheduler::task);
-
-      class context : private boost::noncopyable
-      {
-      public:
-        template <registrar on_event>
-        void set(socket s, handler f, second_t to, handler h)
-        {
-          system_socket & sock( *s );
-          sock._io.cancel(_timeout_id);
-          _f.swap(f);
-          _h.swap(h);
-          _timeout = to;
-          if (_f)
-          {
-            if (_timeout)
-              _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout<on_event>, this, s), _timeout);
-            (sock._io.*on_event)(sock._sock, boost::bind(&context::handle_event<on_event>, this, s));
-          }
-          else
-            (sock._io.*on_event)(sock._sock, scheduler::task());
-        }
-
-      private:
-        handler                 _f;
-        handler                 _h;
-        scheduler::task_id      _timeout_id;
-        second_t                _timeout;
-
-        template <registrar on_event>
-        void handle_event(socket s)
-        {
-          system_socket & sock( *s );
-          sock._io.cancel(_timeout_id);
-          if (_f) _f();
-          if (_f)
-          {
-            if (_timeout)
-              _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout<on_event>, this, s), _timeout);
-          }
-          else
-            (sock._io.*on_event)(sock._sock, scheduler::task());
-        }
-
-        template <registrar on_event>
-        void handle_timeout(socket s)
-        {
-          handler h;
-          h.swap(_h);
-          set<on_event>(s, handler(), 0, handler());
-          if (h) h();
-        }
-      };
-
-      context _input, _output;
     };
 
     class resolver : public scheduler
@@ -793,6 +687,115 @@ namespace postmaster
         int const rc( f() );
         if (rc != 0) { system_error error(rc, errno_ecat, ctx); throw error; }
       }
+    };
+
+    // Basic I/O interface.
+
+    class system_socket;
+    typedef boost::shared_ptr<system_socket> socket;
+
+    class system_socket : private boost::noncopyable
+    {
+    public:
+      typedef scheduler::task handler;
+
+      ~system_socket()
+      {
+        _io.unregister_socket(_sock);
+        if (_close_on_destruction)
+          throw_errno_if_minus_one(boost::bind(&close, _sock), "close()");
+      }
+
+      friend socket create_socket(scheduler & io, int fd)
+      {
+        socket s;
+        s.reset( new system_socket(io, fd) );
+        return s;
+      }
+
+      friend void on_input(socket s, handler f, second_t timeout = 0, handler h = handler())
+      {
+        s->_input.set(s, f, timeout, h);
+      }
+
+      friend void on_output(socket s, handler f, second_t timeout = 0, handler h = handler())
+      {
+        s->_output.set(s, f, timeout, h);
+      }
+
+      friend void close_on_destruction(socket s, bool b)
+      {
+        s->_close_on_destruction = b;
+      }
+
+    private:
+      system_socket(scheduler & io, int fd) : _io(io), _sock(fd), _close_on_destruction(true)
+      {
+        BOOST_ASSERT(fd >= 0);
+        _io.register_socket(_sock);
+      }
+
+      scheduler &               _io;
+      int const                 _sock;
+      bool                      _close_on_destruction;
+
+      typedef void (scheduler::*registrar)(scheduler::socket_id, scheduler::task);
+
+      template <registrar on_event>
+      class context : private boost::noncopyable
+      {
+      public:
+        context() : _enabled(false) { }
+
+        void unset(socket s)
+        {
+          _enabled = false;
+          system_socket & sock( *s );
+          sock._io.cancel(_timeout_id);
+          _h.clear();
+          (sock._io.*on_event)(sock._sock, scheduler::task());
+        }
+
+        void set(socket s, handler const & f, second_t to, handler h)
+        {
+          if (!f) return unset(s);
+          system_socket & sock( *s );
+          sock._io.cancel(_timeout_id);
+          _h.swap(h);
+          _timeout = to;
+          if (_timeout)
+            _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout, this, s), _timeout);
+          (sock._io.*on_event)(sock._sock, boost::bind(&context::handle_event, this, s, f));
+          _enabled = true;
+        }
+
+      private:
+        bool                    _enabled;
+        handler                 _h;
+        scheduler::task_id      _timeout_id;
+        second_t                _timeout;
+
+        void handle_event(socket s, handler f)
+        {
+          system_socket & sock( *s );
+          sock._io.cancel(_timeout_id);
+          f();
+          if (!_enabled) return unset(s);
+          if (_timeout)
+            _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout, this, s), _timeout);
+        }
+
+        void handle_timeout(socket s)
+        {
+          handler h;
+          h.swap(_h);
+          unset(s);
+          if (h) h();
+        }
+      };
+
+      context<&scheduler::on_input> _input;
+      context<&scheduler::on_output> _output;
     };
   }
 }
