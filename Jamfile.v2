@@ -1,31 +1,4 @@
-# build postmaster
+# postmaster/Jamfile.v2
 
-exe postmaster
-  : main.cpp pm_routing pm_error pm_target
-  : <use>/boost
-    <use>/boost/program_options <library>/boost//program_options
-  ;
-
-lib pm_error
-  : system-error.cpp
-  : <use>/boost
-    <use>/boost/system <library>/boost//system
-  :
-  : <library>/boost//system
-  ;
-
-lib pm_routing
-  : routing.cpp
-  : <use>/boost <library>/rfc2822//rfc2822
-  ;
-
-lib pm_target  : target.cpp  : <use>/boost ;
-
-test-suite postmaster_tests
-  : [ run test-address-parser.cpp               /boost//unit_test_framework /rfc2822//rfc2822 ]
-    [ run test-nocase-string.cpp                /boost//unit_test_framework ]
-    [ run test-route-parser.cpp pm_routing      /boost//unit_test_framework ]
-    [ run test-pattern-matching.cpp pm_routing  /boost//unit_test_framework ]
-    [ run test-target.cpp pm_target pm_error    /boost//unit_test_framework ]
-    [ run test-routing.cpp pm_routing           /boost//unit_test_framework ]
-  ;
+build-project src ;
+build-project test ;

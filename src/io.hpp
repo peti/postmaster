@@ -33,8 +33,7 @@
 
 #include "error.hpp"
 #include <boost/noncopyable.hpp>
-#include <boost/function/function0.hpp>
-#include <boost/function/function1.hpp>
+#include <boost/function.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/scoped_array.hpp>
 #include <boost/compatibility/cpp_c_headers/cstddef>
@@ -203,13 +202,16 @@ namespace postmaster
 
       time_t now() const { return _now; }
 
-      void cancel(task_id & tid)
+      bool cancel(task_id & tid)
       {
         if (tid.first > _now)
         {
           _tasks.erase(tid.second);
           tid.first = 0;
+          return true;
         }
+        else
+          return false;
       }
 
       second_t run()
@@ -277,7 +279,6 @@ namespace postmaster
             if (errno == EINTR) continue;
             else                throw system_error(errno, errno_ecat, "epoll_wait()");
           }
-          update_core_time();
           for (int i(0); i != rc; ++i)
           {
             BOOST_ASSERT(ev[i].data.fd >= 0);
@@ -381,7 +382,7 @@ namespace postmaster
                                                               | adns_if_nosigpipe
                                                               | adns_if_checkc_freq
                                                               ));
-        throw_rc_if_not_zero(boost::bind(&adns_init, &_state, flags, static_cast<FILE*>(0)), "cannot initialize adns resolver");
+        throw_rc_if_not_zero(adns_init(&_state, flags, static_cast<FILE*>(0)), "cannot initialize adns resolver");
         BOOST_ASSERT(_state);
         update_time();
       }
@@ -447,7 +448,7 @@ namespace postmaster
       {
         schedule_deliver();
         adns_query qid;
-        throw_rc_if_not_zero( boost::bind(&adns_submit, _state, owner, rrtype, static_cast<adns_queryflags>(flags), static_cast<FILE*>(0), &qid)
+        throw_rc_if_not_zero( adns_submit(_state, owner, rrtype, static_cast<adns_queryflags>(flags), static_cast<FILE*>(0), &qid)
                             , "submit DNS query"
                             );
         _qset[qid].swap(f);
@@ -535,7 +536,7 @@ namespace postmaster
         std::cout << "process adns fd " << fd << std::endl;
         schedule_deliver();
         update_time();
-        throw_rc_if_not_zero(boost::bind(f, _state, fd, &_now), "process DNS I/O");
+        throw_rc_if_not_zero((*f)(_state, fd, &_now), "process DNS I/O");
       }
 
       void process_timeout()
@@ -681,121 +682,84 @@ namespace postmaster
         }
       }
 
-      template <class Func>
-      static void throw_rc_if_not_zero(Func f, std::string const & ctx)
+      static void throw_rc_if_not_zero(int rc, std::string const & ctx)
       {
-        int const rc( f() );
         if (rc != 0) { system_error error(rc, errno_ecat, ctx); throw error; }
       }
     };
 
-    // Basic I/O interface.
+    // Basic I/O.
 
-    class system_socket;
-    typedef boost::shared_ptr<system_socket> socket;
+    class basic_socket;
+    typedef boost::shared_ptr<basic_socket> socket;
 
-    class system_socket : private boost::noncopyable
+    class basic_socket : private boost::noncopyable
     {
     public:
-      typedef scheduler::task handler;
+      typedef scheduler::task                           task;
+      typedef scheduler::task_id                        task_id;
+      typedef scheduler::socket_id                      socket_id;
+      typedef boost::function1<void, char *>            input_handler;
+      typedef boost::function1<void, char const *>      output_handler;
 
-      ~system_socket()
-      {
-        _io.unregister_socket(_sock);
-        if (_close_on_destruction)
-          throw_errno_if_minus_one(boost::bind(&close, _sock), "close()");
-      }
-
-      friend socket create_socket(scheduler & io, int fd)
-      {
-        socket s;
-        s.reset( new system_socket(io, fd) );
-        return s;
-      }
-
-      friend void on_input(socket s, handler f, second_t timeout = 0, handler h = handler())
-      {
-        s->_input.set(s, f, timeout, h);
-      }
-
-      friend void on_output(socket s, handler f, second_t timeout = 0, handler h = handler())
-      {
-        s->_output.set(s, f, timeout, h);
-      }
-
-      friend void close_on_destruction(socket s, bool b)
-      {
-        s->_close_on_destruction = b;
-      }
-
-    private:
-      system_socket(scheduler & io, int fd) : _io(io), _sock(fd), _close_on_destruction(true)
+      basic_socket(scheduler & io, scheduler::socket_id fd) : _io(io), _sock(fd)
       {
         BOOST_ASSERT(fd >= 0);
+        int const rc( fcntl(fd, F_GETFL, 0) );
+        if (rc == -1) throw system_error(errno, errno_ecat, "fcntl() failed to obtain socket flags");
+        int const flags( rc | O_NONBLOCK );
+        if (rc != flags)
+          if (fcntl(fd, F_SETFL, flags) == -1)
+            throw system_error(errno, errno_ecat, "fcntl() failed to set socket flags");
         _io.register_socket(_sock);
       }
 
-      scheduler &               _io;
-      int const                 _sock;
-      bool                      _close_on_destruction;
-
-      typedef void (scheduler::*registrar)(scheduler::socket_id, scheduler::task);
-
-      template <registrar on_event>
-      class context : private boost::noncopyable
+      ~basic_socket()
       {
-      public:
-        context() : _enabled(false) { }
+        _io.unregister_socket(_sock);
+        throw_errno_if_minus_one(boost::bind(&close, _sock), "close()");
+      }
 
-        void unset(socket s)
-        {
-          _enabled = false;
-          system_socket & sock( *s );
-          sock._io.cancel(_timeout_id);
-          _h.clear();
-          (sock._io.*on_event)(sock._sock, scheduler::task());
-        }
+      void read(char * begin, char * end, input_handler const & f)
+      {
+        BOOST_ASSERT(begin < end);
+        _io.on_input(_sock, boost::bind(&basic_socket::do_read, this, begin, end, f));
+      }
 
-        void set(socket s, handler const & f, second_t to, handler h)
-        {
-          if (!f) return unset(s);
-          system_socket & sock( *s );
-          sock._io.cancel(_timeout_id);
-          _h.swap(h);
-          _timeout = to;
-          if (_timeout)
-            _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout, this, s), _timeout);
-          (sock._io.*on_event)(sock._sock, boost::bind(&context::handle_event, this, s, f));
-          _enabled = true;
-        }
+      void write(char const * begin, char const * end, output_handler const & f)
+      {
+        BOOST_ASSERT(begin < end);
+        _io.on_output(_sock, boost::bind(&basic_socket::do_write, this, begin, end, f));
+      }
 
-      private:
-        bool                    _enabled;
-        handler                 _h;
-        scheduler::task_id      _timeout_id;
-        second_t                _timeout;
+      task_id schedule(task const & f, second_t to = 0u)
+      {
+        return _io.schedule(f, to);
+      }
 
-        void handle_event(socket s, handler f)
-        {
-          system_socket & sock( *s );
-          sock._io.cancel(_timeout_id);
-          f();
-          if (!_enabled) return unset(s);
-          if (_timeout)
-            _timeout_id = sock._io.schedule(boost::bind(&context::handle_timeout, this, s), _timeout);
-        }
+      bool cancel(task_id tid)  { return _io.cancel(tid); }
+      void cancel_input()       { _io.on_input(_sock, task()); }
+      void cancel_output()      { _io.on_output(_sock, task()); }
 
-        void handle_timeout(socket s)
-        {
-          handler h;
-          h.swap(_h);
-          unset(s);
-          if (h) h();
-        }
-      };
+    private:
+      scheduler &       _io;
+      socket_id const   _sock;
 
-      context<&scheduler::on_input> _input;
-      context<&scheduler::on_output> _output;
+      void do_read(char * begin, char * end, input_handler f)
+      {
+        cancel_input();
+        ssize_t const rc( ::read(_sock, begin, end - begin) );
+        if (rc < 0) f(static_cast<char *>(0));
+        else        f(begin + rc);
+      }
+
+      void do_write(char const * begin, char const * end, output_handler f)
+      {
+        cancel_output();
+        ssize_t const rc( ::write(_sock, begin, end - begin) );
+        if (rc < 0) f(static_cast<char *>(0));
+        else        f(begin + rc);
+      }
     };
   }
 }

@@ -47,16 +47,6 @@ struct print
 
 void print_id(unsigned int id) { std::cout << "task id " << id << std::endl; }
 
-void socket_timeout(postmaster::io::socket s1, postmaster::io::socket s2, postmaster::io::socket s)
-{
-  std::cout << "timeout on socket " << s << std::endl;
-  BOOST_ASSERT(s == s1 || s == s2);
-  postmaster::io::on_input(s1,  postmaster::io::system_socket::handler());
-  postmaster::io::on_output(s1, postmaster::io::system_socket::handler());
-  postmaster::io::on_input(s2,  postmaster::io::system_socket::handler());
-  postmaster::io::on_output(s2, postmaster::io::system_socket::handler());
-}
-
 inline std::ostream & operator<< (std::ostream & os, boost::spirit::parse_info<> const r)
 {
    os << "parser: ";
@@ -69,6 +59,69 @@ inline std::ostream & operator<< (std::ostream & os, boost::spirit::parse_info<>
      os << "miss";
    return os;
 }
+
+class forward : private boost::noncopyable
+{
+public:
+  typedef postmaster::io::core::task_id         timeout_id;
+  typedef postmaster::io::basic_socket          basic_socket;
+  typedef boost::shared_ptr<basic_socket>       socket;
+  typedef std::vector<char>                     iobuf;
+  typedef boost::shared_ptr<forward>            context;
+
+  forward(socket sin, socket sout = socket())
+  : _sin(sin), _sout(sout ? sout : sin), _buf(1024u)
+  {
+  }
+
+  static void run(context ctx)
+  {
+    forward & self( *ctx );
+    char * const begin( &self._buf[0] );
+    char * const end( begin + self._buf.size() );
+    self._timeout = self._sin->schedule(boost::bind(&handle_timeout, ctx), 10u);
+    self._sin->read(begin, end, boost::bind(&handle_read, ctx, _1));
+  }
+
+private:
+  socket        _sin, _sout;
+  iobuf         _buf;
+  char const *  _data_begin;
+  char const *  _data_end;
+  timeout_id    _timeout;
+
+  static void handle_read(context ctx, char * read_end)
+  {
+    forward & self( *ctx );
+    if (!self._sin->cancel(self._timeout)) return;
+    self._data_begin = &self._buf[0];
+    self._data_end   = read_end;
+    if (self._data_end <= self._data_begin) return;
+    self._timeout = self._sout->schedule(boost::bind(&handle_timeout, ctx), 10u);
+    self._sout->write(self._data_begin, self._data_end, boost::bind(&handle_write, ctx, _1));
+  }
+
+  static void handle_write(context ctx, char const * write_end)
+  {
+    forward & self( *ctx );
+    if (!self._sout->cancel(self._timeout)) return;
+    if (!write_end) return;
+    self._data_begin = write_end;
+    if (self._data_begin == self._data_end)
+      run(ctx);
+    else
+    {
+      self._timeout = self._sin->schedule(boost::bind(&handle_timeout, ctx), 10u);
+      self._sout->write(self._data_begin, self._data_end, boost::bind(&handle_write, ctx, _1));
+    }
+  }
+
+  static void handle_timeout(context ctx)
+  {
+    ctx->_sin->cancel_input();
+    ctx->_sout->cancel_output();
+  }
+};
 
 int main(int, char**)
 {
@@ -91,12 +144,11 @@ int main(int, char**)
 
   resolver io;
   {
-    io::socket sin( create_socket(io, STDIN_FILENO) );   close_on_destruction(sin, false);
-    io::socket sout( create_socket(io, STDOUT_FILENO) ); close_on_destruction(sout, false);
-    cout << "standard input  = socket " << sin << endl
-         << "standard output = socket " << sout << endl;
-    on_input(sin, bind(print_id, 10u), 3u, bind(socket_timeout, sin, sout, sin));
-    on_output(sout, bind(print_id, 20u), 5u, bind(socket_timeout, sin, sout, sout));
+    typedef boost::shared_ptr<basic_socket> shared_socket;
+    shared_socket sin( new basic_socket(io, STDIN_FILENO) );
+    shared_socket sout( new basic_socket(io, STDOUT_FILENO) );
+    boost::shared_ptr<forward> f( new forward(sin, sout) );
+    forward::run(f);
   }
   {
     char const * const argv[] = { "/bin/env", 0 };

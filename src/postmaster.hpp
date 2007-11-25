@@ -17,7 +17,6 @@
 #include <string>
 #include <utility>
 #include <boost/assert.hpp>
-#include <boost/system/system_error.hpp>
 #include <iostream>
 
 #define POSTMASTER_NAME    "postmaster"
@@ -40,11 +39,5 @@ typedef std::pair<target, target_list>  route;
 
 bool parse(route &, char const *, char const *);
 bool match(address const &, pattern const &);
-
-struct system_error : public boost::system::system_error
-{
-  system_error();
-  explicit system_error(string const & context);
-};
 
 #endif // POSTMASTER_HPP_INCLUDED
