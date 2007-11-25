@@ -65,7 +65,7 @@ class forward : private boost::noncopyable
 public:
   typedef postmaster::io::core::task_id         timeout_id;
   typedef postmaster::io::basic_socket          basic_socket;
-  typedef boost::shared_ptr<basic_socket>       socket;
+  typedef postmaster::io::socket                socket;
   typedef std::vector<char>                     iobuf;
   typedef boost::shared_ptr<forward>            context;
 
@@ -79,7 +79,7 @@ public:
     forward & self( *ctx );
     char * const begin( &self._buf[0] );
     char * const end( begin + self._buf.size() );
-    self._timeout = self._sin->schedule(boost::bind(&handle_timeout, ctx), 10u);
+    self._timeout = self._sout->schedule(boost::bind(&basic_socket::cancel_input, self._sin), 10u);
     self._sin->read(begin, end, boost::bind(&handle_read, ctx, _1));
   }
 
@@ -97,7 +97,7 @@ private:
     self._data_begin = &self._buf[0];
     self._data_end   = read_end;
     if (self._data_end <= self._data_begin) return;
-    self._timeout = self._sout->schedule(boost::bind(&handle_timeout, ctx), 10u);
+    self._timeout = self._sout->schedule(boost::bind(&basic_socket::cancel_output, self._sin), 10u);
     self._sout->write(self._data_begin, self._data_end, boost::bind(&handle_write, ctx, _1));
   }
 
@@ -111,15 +111,9 @@ private:
       run(ctx);
     else
     {
-      self._timeout = self._sin->schedule(boost::bind(&handle_timeout, ctx), 10u);
+      self._timeout = self._sout->schedule(boost::bind(&basic_socket::cancel_output, self._sout), 10u);
       self._sout->write(self._data_begin, self._data_end, boost::bind(&handle_write, ctx, _1));
     }
-  }
-
-  static void handle_timeout(context ctx)
-  {
-    ctx->_sin->cancel_input();
-    ctx->_sout->cancel_output();
   }
 };
 
