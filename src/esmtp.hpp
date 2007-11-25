@@ -1,5 +1,5 @@
-#ifndef POSTMASTER_ESMTP_2007_11_18
-#define POSTMASTER_ESMTP_2007_11_18
+#ifndef POSTMASTER_ESMTP_HPP_2007_11_18
+#define POSTMASTER_ESMTP_HPP_2007_11_18
 
 #include "parser.hpp"
 #include <boost/bind.hpp>
@@ -273,4 +273,4 @@ namespace postmaster
   }
 }
 
-#endif // POSTMASTER_ESMTP_2007_11_18
+#endif // POSTMASTER_ESMTP_HPP_2007_11_18
