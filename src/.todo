@@ -1,0 +1,29 @@
+<todo version="0.1.19">
+    <title>
+        implementation
+    </title>
+    <note priority="medium" time="1195925428">
+        resolver: unregister_socket() might fail
+
+        The resolver registers and unregisters ADNS sockets in epoll based on
+        the pollfd set adns_beforepoll() returns. At the time a previously
+        active socket disappears from that set, adns might have closed it
+        already. Closing a descriptor automatically removes it from epoll,
+        consequently the unregister_socket() call issued by resolver might fail
+        with an ENOENT error.
+    </note>
+    <note priority="medium" time="1195925675">
+        scheduler: add support for POLLPRI events
+
+        The adns library expects adns_processexceptional() to be called when
+        TCP urgent data arrives (POLLPRI). The current scheduler implementation
+        doesn't support that; we only have POLLIN and POLLOUT.
+
+        DNS servers don't actually use TCP urgent data; apparently adns uses
+        that event as a sign that the connection has become unusable. It's
+        unclear whether adns actually cares about that event. It might be
+        possible to work around this entire subject by (a) disabling
+        adns_if_noautosys or by (b) calling adns_processany() every now and
+        then.
+    </note>
+</todo>
