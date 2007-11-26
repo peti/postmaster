@@ -112,7 +112,7 @@ namespace postmaster
         if (pid == 0)             // child
         {
           execve(argv[0], const_cast<char **>(argv), const_cast<char **>(envp));
-          std::cerr << "execve(" << argv[0] << "): " << system_error(errno, errno_ecat).what() << std::endl;
+          std::cerr << "execve(" << argv[0] << "): " << system_error(errno).what() << std::endl;
           _Exit(1);
         }
         _hmap[pid] = f;           // parent
@@ -123,7 +123,7 @@ namespace postmaster
       {
         if (::kill(pid, SIGKILL) == -1)
           if (errno != ESRCH)
-            throw system_error(errno, errno_ecat, "kill()");
+            throw system_error(errno, "kill()");
       }
 
       void deliver_exit_codes()
@@ -278,7 +278,7 @@ namespace postmaster
           if (rc == -1)
           {
             if (errno == EINTR) continue;
-            else                throw system_error(errno, errno_ecat, "epoll_wait()");
+            else                throw system_error(errno, "epoll_wait()");
           }
           for (int i(0); i != rc; ++i)
           {
@@ -293,7 +293,7 @@ namespace postmaster
 
       void register_socket(socket_id s)
       {
-        std::cout << "register socket " << s << std::endl;
+        TRACE_ARG1(s);
         BOOST_ASSERT(s >= 0);
         BOOST_ASSERT(_handlers.find(s) == _handlers.end());
         try
@@ -313,7 +313,7 @@ namespace postmaster
 
       void unregister_socket(socket_id s)
       {
-        std::cout << "unregister socket " << s << std::endl;
+        TRACE_ARG1(s);
         BOOST_ASSERT(s >= 0);
         handler_map::iterator const i( _handlers.find(s) );
         BOOST_ASSERT(i != _handlers.end());
@@ -457,7 +457,6 @@ namespace postmaster
 
       void register_fds()
       {
-        std::cout << "re-register adns in scheduler" << std::endl;
         if (_qset.empty()) return release_fds();
 
         // Determine the file descriptors we have to probe for.
@@ -474,7 +473,7 @@ namespace postmaster
           {
             case ERANGE:        BOOST_ASSERT(nfds > 0); fds.reset( new pollfd[nfds] ); break;
             case 0:             break;
-            default:            throw system_error(rc, errno_ecat, "adns_beforepoll()");
+            default:            throw system_error(rc, "adns_beforepoll()");
           }
         }
         BOOST_ASSERT(nfds >= 0);
@@ -486,7 +485,7 @@ namespace postmaster
         {
           BOOST_ASSERT(fds[i].fd >= 0);
           BOOST_ASSERT(fds[i].events & (POLLIN | POLLOUT));
-          std::cout << "probe adns fd " << fds[i].fd << std::endl;
+          TRACE_MSG("probe adns socket " << fds[i].fd);
           registered_fds.insert(fds[i].fd);
         }
         std::vector<int> fdset;
@@ -534,7 +533,7 @@ namespace postmaster
 
       void process_fd(int (*f)(adns_state, int, timeval const *), int fd)
       {
-        std::cout << "process adns fd " << fd << std::endl;
+        TRACE_MSG("process adns socket" << fd);
         schedule_deliver();
         update_time();
         throw_rc_if_not_zero((*f)(_state, fd, &_now), "process DNS I/O");
@@ -542,7 +541,7 @@ namespace postmaster
 
       void process_timeout()
       {
-        std::cout << "process adns timeouts" << std::endl;
+        TRACE_MSG("process adns timeouts");
         schedule_deliver();
         update_time();
         adns_processtimeouts(_state, &_now);
@@ -550,7 +549,7 @@ namespace postmaster
 
       void deliver()
       {
-        std::cout << "deliver adns events" << std::endl;
+        TRACE_MSG("deliver adns events");
         _scheduled = false;
         check_consistency();
         answer ans;
@@ -565,7 +564,7 @@ namespace postmaster
             case ESRCH:   BOOST_ASSERT(_qset.empty());  return release_fds();
             case EAGAIN:  BOOST_ASSERT(!_qset.empty()); return register_fds();
             case 0:       break;
-            default:      throw system_error(rc, errno_ecat, "adns_check()");
+            default:      throw system_error(rc, "adns_check()");
           }
           BOOST_ASSERT(a);
           ans.reset(a, &::free);
@@ -685,7 +684,7 @@ namespace postmaster
 
       static void throw_rc_if_not_zero(int rc, std::string const & ctx)
       {
-        if (rc != 0) { system_error error(rc, errno_ecat, ctx); throw error; }
+        if (rc != 0) { system_error error(rc, ctx); throw error; }
       }
     };
 
@@ -707,11 +706,11 @@ namespace postmaster
       {
         BOOST_ASSERT(fd >= 0);
         int const rc( fcntl(fd, F_GETFL, 0) );
-        if (rc == -1) throw system_error(errno, errno_ecat, "fcntl() failed to obtain socket flags");
+        if (rc == -1) throw system_error(errno, "fcntl() failed to obtain socket flags");
         int const flags( rc | O_NONBLOCK );
         if (rc != flags)
           if (fcntl(fd, F_SETFL, flags) == -1)
-            throw system_error(errno, errno_ecat, "fcntl() failed to set socket flags");
+            throw system_error(errno, "fcntl() failed to set socket flags");
         _io.register_socket(_sock);
       }
 
@@ -787,7 +786,7 @@ namespace postmaster
         f(sock, &addr, len);
       }
       if (errno != EWOULDBLOCK && errno == EAGAIN)
-        throw system_error(errno, errno_ecat, "failed to accept() new connection");
+        throw system_error(errno, "failed to accept() new connection");
     }
 
     inline socket accept_stream_socket(scheduler & io, char const * node, char const * service, socket_handler f)

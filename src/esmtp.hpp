@@ -2,8 +2,7 @@
 #define POSTMASTER_ESMTP_HPP_2007_11_18
 
 #include "parser.hpp"
-#include <boost/bind.hpp>
-#include <boost/assert.hpp>
+#include "error.hpp"
 
 namespace postmaster
 {

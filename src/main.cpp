@@ -143,7 +143,6 @@ int main(int, char**)
                << endl;
 
   resolver io;
-#if 0
   {
     typedef boost::shared_ptr<basic_socket> shared_socket;
     shared_socket sin( new basic_socket(io, STDIN_FILENO) );
@@ -165,7 +164,11 @@ int main(int, char**)
     io::system::child_id const pid( io.execute(argv, print()) );
     io.schedule(bind(&io::system::kill, &io, pid), 1u);
   }
-
+  {
+    io::socket ls( accept_stream_socket(io, 0, "8080", boost::bind(&forward::run, _1, _2, _3)) );
+    io.schedule(bind(&scheduler::on_input, &io, ls->get_socket(), scheduler::task()), 30u);
+    ls.reset();
+  }
   io.schedule(bind(print_id, 3u), 1u);
   io.schedule(bind(print_id, 0u));
   io.schedule(bind(print_id, 4u), 3u);
@@ -175,11 +178,6 @@ int main(int, char**)
   io.query_a_no_cname("peti-mx.localhost", print());
   io.query_mx("peti-ip.localhost", print());
   io.query_ptr("1.0.0.127.in-addr.arpa", print());
-#endif
-
-  io::socket ls( accept_stream_socket(io, 0, "8080", boost::bind(&forward::run, _1, _2, _3)) );
-  io.schedule(bind(&scheduler::on_input, &io, ls->get_socket(), scheduler::task()), 30u);
-  ls.reset();
 
   for (;;)
   {

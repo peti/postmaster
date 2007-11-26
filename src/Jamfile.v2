@@ -3,7 +3,6 @@
 exe postmaster
   : main.cpp
   : <use>/boost
-    <use>/boost//system <library>/boost//system
     <library>adns
     <warnings>all
   ;
