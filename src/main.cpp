@@ -74,6 +74,12 @@ public:
   {
   }
 
+  static void run(socket s, sockaddr const *, socklen_t)
+  {
+    context ctx( new forward(s) );
+    run(ctx);
+  }
+
   static void run(context ctx)
   {
     forward & self( *ctx );
@@ -137,6 +143,7 @@ int main(int, char**)
                << endl;
 
   resolver io;
+#if 0
   {
     typedef boost::shared_ptr<basic_socket> shared_socket;
     shared_socket sin( new basic_socket(io, STDIN_FILENO) );
@@ -168,6 +175,11 @@ int main(int, char**)
   io.query_a_no_cname("peti-mx.localhost", print());
   io.query_mx("peti-ip.localhost", print());
   io.query_ptr("1.0.0.127.in-addr.arpa", print());
+#endif
+
+  io::socket ls( accept_stream_socket(io, 0, "8080", boost::bind(&forward::run, _1, _2, _3)) );
+  io.schedule(bind(&scheduler::on_input, &io, ls->get_socket(), scheduler::task()), 30u);
+  ls.reset();
 
   for (;;)
   {

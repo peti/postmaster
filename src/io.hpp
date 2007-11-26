@@ -48,6 +48,7 @@
 #include <iostream>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <sys/epoll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -741,6 +742,9 @@ namespace postmaster
       void cancel_input()       { _io.on_input(_sock, task()); }
       void cancel_output()      { _io.on_output(_sock, task()); }
 
+      socket_id get_socket() const   { return _sock; }
+      scheduler & get_io()           { return _io; }
+
     private:
       scheduler &       _io;
       socket_id const   _sock;
@@ -761,6 +765,58 @@ namespace postmaster
         else        f(begin + rc);
       }
     };
+
+    typedef boost::function<void (socket, sockaddr const *, socklen_t)> socket_handler;
+
+    inline void accept_stream_socket(socket ls, socket_handler f)
+    {
+      sockaddr  addr;
+      socklen_t len;
+      socket    sock;
+      for (int s( accept(ls->get_socket(), &addr, &len) ); s >= 0; s = accept(ls->get_socket(), &addr, &len))
+      {
+        try
+        {
+          sock.reset( new basic_socket(ls->get_io(), s) );
+        }
+        catch(...)
+        {
+          throw_errno_if_minus_one(boost::bind(&::close, s), "cannot close() listening socket");
+          throw;
+        }
+        f(sock, &addr, len);
+      }
+      if (errno != EWOULDBLOCK && errno == EAGAIN)
+        throw system_error(errno, errno_ecat, "failed to accept() new connection");
+    }
+
+    inline socket accept_stream_socket(scheduler & io, char const * node, char const * service, socket_handler f)
+    {
+      boost::shared_ptr<addrinfo> _addr;
+      socket s;
+      addrinfo   hint = { AI_NUMERICHOST, 0, SOCK_STREAM, 0, 0u, NULL, NULL, NULL };
+      addrinfo * addr;
+      int const rc( getaddrinfo(node, service, &hint, &addr) );
+      if (rc != 0) throw std::runtime_error( gai_strerror(rc) );
+      _addr.reset(addr, &freeaddrinfo);
+      while (addr && addr->ai_socktype != SOCK_STREAM)
+        addr = addr->ai_next;
+      if (!addr) throw std::runtime_error("address does not map to a stream socket endpoint");
+      int const ls( throw_errno_if_minus_one(boost::bind(&::socket, addr->ai_family, addr->ai_socktype, addr->ai_protocol), "socket(2)") );
+      try
+      {
+        s.reset( new basic_socket(io, ls) );
+      }
+      catch(...)
+      {
+        throw_errno_if_minus_one(boost::bind(&::close, ls), "cannot close() listening socket");
+        throw;
+      }
+      throw_errno_if_minus_one(boost::bind(&::bind, ls, addr->ai_addr, addr->ai_addrlen), "bind(2)");
+      throw_errno_if_minus_one(boost::bind(&::listen, ls, 16u), "listen(2)");
+      io.on_input(ls, boost::bind(&accept_stream_socket, s, f));
+      return s;
+    }
   }
 }
 
