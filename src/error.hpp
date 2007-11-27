@@ -14,8 +14,8 @@
 #ifndef NDEBUG
 #  include <iostream>
 #  define TRACE_MSG(msg)        std::cerr << "[" << __func__ << "] " << msg << std::endl
-#  define TRACE_ARG1(arg)              TRACE_MSG(#arg " = " << arg)
-#  define TRACE_ARG2(arg1,arg2)        TRACE_MSG(#arg1 " = " << arg1 << ", " << #arg2 " = " << arg2)
+#  define TRACE_ARG1(arg)       TRACE_MSG(#arg " = " << arg)
+#  define TRACE_ARG2(arg1,arg2) TRACE_MSG(#arg1 " = " << arg1 << ", " << #arg2 " = " << arg2)
 #else
 #  define TRACE_MSG(msg)        ((void)(0))
 #  define TRACE_ARG1(arg)       ((void)(0))
