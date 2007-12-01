@@ -1,14 +1,49 @@
-                 Postmaster Design Specification
+                     Postmaster ESMTP Server
 
-An Example E-Mail Transaction
+The main configuration file resides in /etc/postmaster.cf:
 
-       Client                     Server
-  remote.exmple.net           mail.example.com
-  192.128.12.2:3392             10.0.0.1:25
+  [core]
+    logger              = syslog
+    user-id             = "postmaster"
+    group-id            = "nobody"
+    pid-file            = "/var/run/postmaster.pid"
+    spool-directory     = "/var/spool/mailqueue"
+    local-mailer        = procmail
 
-       connect()
-         --------------------------->
-                                  accept()
+  [syslog]
+    ident               = "postmaster"
+    facility            = "mail"
+
+  [logfile "system-wide-logfile"]
+    file                = "/var/log/postmaster-%Y-%m-%d"
+
+  [pipe "procmail"]
+    exec                = "/usr/bin/procmail" "-f" "${MAIL_FROM}" "-d" "${RCPT_TO}"
+    multi-user-capable  = yes
+
+  [server "mx.example.net"]
+    name                = mx.example.net   # redundant
+    listen-port         = 25               # would have defaulted to mx.example.net:25
+
+  [server "localhost"]
+    listen-port         = ipv6-localhost:submission   # ::1:587
+    logger              = system-wide-logfile
+    routing-table       = local-routes
+    local-rcpt-to       = yes
+
+  [route]
+    postmaster                          joe
+    postmaster@acme.example.net         postmaster
+    postmaster@acme.example.org         postmaster
+
+    file "/etc/postmaster.rt"
+
+  [route "local-routes"]
+    # simulate sendmail for processes that can connect to localhost
+    root@       postmaster
+    bin@        postmaster
+    cron@       postmaster
+    games@      postmaster
 
 
 Who needs this software?
