@@ -2,6 +2,7 @@
 #include "io.hpp"
 #include <iostream>
 #include <boost/tuple/tuple_io.hpp>
+#include <boost/none.hpp>
 
 struct print
 {
@@ -60,48 +61,51 @@ inline std::ostream & operator<< (std::ostream & os, boost::spirit::parse_info<>
    return os;
 }
 
-class forward : private boost::noncopyable
+class stream : private boost::noncopyable
 {
-public:
-  typedef postmaster::io::core::task_id         timeout_id;
-  typedef postmaster::io::basic_socket          basic_socket;
-  typedef postmaster::io::socket                socket;
-  typedef std::vector<char>                     iobuf;
-  typedef boost::shared_ptr<forward>            context;
+  typedef std::vector<char>             iobuf;
+  typedef postmaster::io::basic_socket  basic_socket;
+  typedef postmaster::io::core::task_id timeout_id;
 
-  forward(socket sin, socket sout = socket())
-  : _sin(sin), _sout(sout ? sout : sin), _buf(1024u)
+public:
+  typedef boost::shared_ptr<stream>                             context;
+  typedef postmaster::io::socket                                socket;
+  typedef char const *                                          iterator;
+  typedef boost::iterator_range<iterator>                       range;
+  typedef boost::function<void (iterator, range)>               callback;
+  typedef boost::function<void (iterator, iterator, callback)>  handler;
+
+  stream(socket sin, socket sout = socket())
+  : _sin(sin), _sout(sout ? sout : sin)
+  , _inbuf(1024u), _data_begin(&_inbuf[0]), _data_end(_data_begin)
   {
   }
 
-  static void run(socket s, sockaddr const *, socklen_t)
+  static void accept(socket s, sockaddr const *, socklen_t)
   {
-    context ctx( new forward(s) );
+    context ctx( new stream(s) );
     run(ctx);
   }
 
   static void run(context ctx)
   {
-    forward & self( *ctx );
-    char * const begin( &self._buf[0] );
-    char * const end( begin + self._buf.size() );
+    stream & self( *ctx );
     self._timeout = self._sout->schedule(boost::bind(&basic_socket::cancel_input, self._sin), 10u);
-    self._sin->read(begin, end, boost::bind(&handle_read, ctx, _1));
+    self._sin->read(self._data_end, &self._inbuf[self._inbuf.size()], boost::bind(&handle_read, ctx, _1));
   }
 
 private:
   socket        _sin, _sout;
-  iobuf         _buf;
-  char const *  _data_begin;
-  char const *  _data_end;
+  iobuf         _inbuf;
+  char *        _data_begin;
+  char *        _data_end;
   timeout_id    _timeout;
 
   static void handle_read(context ctx, char * read_end)
   {
-    forward & self( *ctx );
+    stream & self( *ctx );
     if (!self._sin->cancel(self._timeout)) return;
-    self._data_begin = &self._buf[0];
-    self._data_end   = read_end;
+    self._data_end = read_end;
     if (self._data_end <= self._data_begin) return;
     self._timeout = self._sout->schedule(boost::bind(&basic_socket::cancel_output, self._sin), 10u);
     self._sout->write(self._data_begin, self._data_end, boost::bind(&handle_write, ctx, _1));
@@ -109,14 +113,17 @@ private:
 
   static void handle_write(context ctx, char const * write_end)
   {
-    forward & self( *ctx );
+    stream & self( *ctx );
     if (!self._sout->cancel(self._timeout)) return;
     if (!write_end) return;
-    self._data_begin = write_end;
-    if (self._data_begin == self._data_end)
+    if (write_end == self._data_end)
+    {
+      self._data_begin = self._data_end = &self._inbuf[0];
       run(ctx);
+    }
     else
     {
+      self._data_begin = const_cast<char*>(write_end);
       self._timeout = self._sout->schedule(boost::bind(&basic_socket::cancel_output, self._sout), 10u);
       self._sout->write(self._data_begin, self._data_end, boost::bind(&handle_write, ctx, _1));
     }
@@ -144,11 +151,10 @@ int main(int, char**)
 
   resolver io;
   {
-    typedef boost::shared_ptr<basic_socket> shared_socket;
-    shared_socket sin( new basic_socket(io, STDIN_FILENO) );
-    shared_socket sout( new basic_socket(io, STDOUT_FILENO) );
-    boost::shared_ptr<forward> f( new forward(sin, sout) );
-    forward::run(f);
+    io::socket sin( new basic_socket(io, STDIN_FILENO) );
+    io::socket sout( new basic_socket(io, STDOUT_FILENO) );
+    stream::context f( new stream(sin, sout) );
+    stream::run(f);
   }
   {
     char const * const argv[] = { "/bin/env", 0 };
@@ -165,7 +171,7 @@ int main(int, char**)
     io.schedule(bind(&io::system::kill, &io, pid), 1u);
   }
   {
-    io::socket ls( accept_stream_socket(io, 0, "8080", boost::bind(&forward::run, _1, _2, _3)) );
+    io::socket ls( accept_stream_socket(io, 0, "8080", boost::bind(&stream::accept, _1, _2, _3)) );
     io.schedule(bind(&scheduler::on_input, &io, ls->get_socket(), scheduler::task()), 30u);
     ls.reset();
   }
