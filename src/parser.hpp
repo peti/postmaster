@@ -16,8 +16,21 @@ namespace spirit = boost::spirit ;
 
 // ----- Helper Macros
 
-#define PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(NAME) \
-  PP_PHOENIX_DEFINE_TRIVIAL_RECORD_ACCESSOR(NAME, typename Record::NAME ## _type &)
+#define PP_PHOENIX_DEFINE_RECORD_ACCESSOR(NAME, TYPE, ACC)      \
+  struct NAME ## _impl                                          \
+  {                                                             \
+    template <typename Record>                                  \
+    struct result                                               \
+    {                                                           \
+      typedef TYPE type;                                        \
+    };                                                          \
+    template <typename Record>                                  \
+    typename result<Record>::type operator() (Record & r) const \
+    {                                                           \
+      return r.ACC;                                             \
+    }                                                           \
+  };                                                            \
+  phoenix::function<NAME ## _impl> const NAME = NAME ## _impl()
 
 #define PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, TYPE, METHOD)      \
   struct NAME ## _impl                                          \
@@ -34,9 +47,6 @@ namespace spirit = boost::spirit ;
     }                                                           \
   };                                                            \
   phoenix::function<NAME ## _impl> const NAME = NAME ## _impl()
-
-#define PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(NAME) \
-   PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, void, NAME)
 
 #define PP_SPIRIT_DEFINE_CLOSURE(NAME)                                          \
   struct NAME ## _closure : public spirit::closure<NAME ## _closure, NAME>      \
@@ -68,16 +78,50 @@ namespace spirit = boost::spirit ;
   };                                                                            \
   NAME ## _parser const NAME ## _p
 
+#define PP_SPIRIT_DEFINE_TRIVIAL_GRAMMAR(NAME, GRAMMAR)                         \
+  struct NAME ## _parser                                                        \
+  : public spirit::grammar<NAME ## _parser>                                     \
+  {                                                                             \
+    NAME ## _parser() { }                                                       \
+                                                                                \
+    template<typename scannerT>                                                 \
+    struct definition                                                           \
+    {                                                                           \
+      spirit::rule<scannerT>    NAME;                                           \
+                                                                                \
+      definition(NAME ## _parser const &)                                       \
+      {                                                                         \
+        using namespace spirit;                                                 \
+        using namespace phoenix;                                                \
+        NAME = GRAMMAR;                                                         \
+        BOOST_SPIRIT_DEBUG_NODE(NAME);                                          \
+      }                                                                         \
+                                                                                \
+      spirit::rule<scannerT> const & start() const { return NAME; }             \
+    };                                                                          \
+  };                                                                            \
+  NAME ## _parser const NAME ## _p
+
 #define PP_SPIRIT_DEFINE_PARSER(NAME, GRAMMAR)                                  \
   PP_SPIRIT_DEFINE_CLOSURE(NAME);                                               \
   PP_SPIRIT_DEFINE_GRAMMAR(NAME, NAME ## _closure, GRAMMAR)
 
-// // ----- Lazy helper functions for use in actions
-//
-// PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(first);             // lazy access to pairs
-// PP_PHOENIX_DEFINE_TUPLE_ACCESSOR(second);
-// PP_PHOENIX_DEFINE_TRIVIAL_METHOD_ACTOR(push_back);   // lazy access to std::vector
-//
+// ----- Lazy helper functions for use in actions
+
+/*
+#define PP_PHOENIX_DEFINE_TRIVIAL_ACCESSOR(NAME) \
+  PP_PHOENIX_DEFINE_RECORD_ACCESSOR(NAME, typename Record::NAME ## _type &, NAME)
+
+PP_PHOENIX_DEFINE_TRIVIAL_ACCESSOR(first);             // lazy access to pairs
+PP_PHOENIX_DEFINE_TRIVIAL_ACCESSOR(second);
+
+#define PP_PHOENIX_DEFINE_TRIVIAL_ACTOR(NAME) \
+   PP_PHOENIX_DEFINE_METHOD_ACTOR(NAME, void, NAME)
+
+PP_PHOENIX_DEFINE_TRIVIAL_ACTOR(push_back);   // lazy access to std::vector
+PP_PHOENIX_DEFINE_TRIVIAL_ACTOR(insert);      // lazy access to std::map
+*/
+
 // // ----- Parsers
 //
 // PP_SPIRIT_DEFINE_PARSER
@@ -155,5 +199,18 @@ namespace spirit = boost::spirit ;
 // };
 //
 // route_parser const route_p;
+
+template <class Iterator>
+inline std::ostream & operator<< (std::ostream & os, boost::spirit::parse_info<Iterator> const r)
+{
+   if (r.hit)
+   {
+     if (r.full) os << "full ";
+     os << "hit (" << r.length << " bytes)";
+   }
+   else
+     os << "miss";
+   return os;
+}
 
 #endif // POSTMASTER_PARSER_HPP_2007_11_18
