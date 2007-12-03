@@ -19,13 +19,19 @@ The main configuration file resides in /etc/postmaster.cf:
 
   [pipe "procmail"]
     exec                = "/usr/bin/procmail" "-f" "${MAIL_FROM}" "-d" "${RCPT_TO}"
-    multi-user-capable  = yes
+    max_rcpt_to         = 16
 
-  [server "mx.example.net"]
-    name                = mx.example.net   # redundant
-    listen-port         = 25               # would have defaulted to mx.example.net:25
+  [relay "relay.example.org"]
+    name                = relay.example.org     # redundant
+    address             = 10.0.0.1
+    address             = 10.0.0.2
 
-  [server "localhost"]
+  [smtpd "mx.example.net"]
+    name                = mx.example.net        # redundant
+    listen-port         = 25                    # default is mx.example.net:25
+    routing-table       = extern
+
+  [smtpd "localhost"]
     listen-port         = ipv6-localhost:submission   # ::1:587
     logger              = system-wide-logfile
     routing-table       = local-routes
@@ -40,28 +46,90 @@ The main configuration file resides in /etc/postmaster.cf:
 
   [route "local-routes"]
     # simulate sendmail for processes that can connect to localhost
-    root@       postmaster
-    bin@        postmaster
-    cron@       postmaster
-    games@      postmaster
+    root@         postmaster
+    bin@          postmaster
+    cron@         postmaster
+    games@        postmaster
+
+  [route "extern"]
+    @example.com  @example.org
+    @example.org  mx.example.net
+
+The configuration is divided into sections. Every section assigns
+an arbitrary number of variables and lasts until the end of the
+file or until a new section is opened. The default section at the
+beginning of the file is [route]. The '=' in variable assignments
+is optional: "foo bar" and "foo = bar" mean the same thing.
+Consequently, the routing section bodies
+
+  @example.org    = @example.net
+  joe@example.net = joe
+
+and
+
+  @example.org    @example.net
+  joe@example.net joe
+
+are equivalent.
+
+Postmaster is interested in the following sections:
+
+  [core]
+
+    This section configures the low-level system layer of the
+    postmaster daemon. These options have sensible compile-time
+    defaults; it shouldn't be necessary to specify any of these
+    values. Anyway, here they are:
+
+    local-mailer = ident
+      The default local mailer.
+
+    spool-directory = "string"
+      Path to the mail spool directory.
+
+    user-id  = "string"
+    group-id = "string"
+      Setuid()/setgid() to ids after all listening ports have
+      been bound. Postmaster does not require super-user
+      privileges beyond binding to TCP port 25. Local mail
+      deliver, however, typically does, so either postmaster is
+      run as 'root' or the local mail back-end (i.e. procmail)
+      needs an appropriate setuid bit.
+
+    pid-file = "string"
+      Write a PID file to this location.
+
+    logger = ident
+      The logging back-end of choice, the default typically
+      being 'syslog'. The alternative is to write into a
+      'logfile' target that's defined in this config file.
+
+  [syslog]
+    ident = "string"
+      Configure the identifier to pass to openlog(3); defaults to
+      "postmaster".
+
+    facility = "string"
+      Configure facility to pass to openlog(3); defaults to
+      LOG_MAIL.
+
+  [logfile ident]
+    file = "string"
+      Path to the log file. strftime(3) placeholders are
+      expanded.
+
+  [smtpd ident]
+    logger = ident
+    listen-port = "string"
+    routing-table = "string"
+
+  [pipe ident]
+
+  [relay ident]
+
+  [route ident]
 
 
-Who needs this software?
-
-  The primary target audience are small to middle-sized mail
-  exchangers, the kind of installation a local-area ISP or an
-  individual Internet enthusiast would have. Postmaster has to be
-  powerful enough to deal with complex setups, naturally, but the
-  world does not need another Sendmail. What it needs is an
-  RFC-compliant Mail Transport Agent that is somewhat bug-free
-  and very simple to setup and configure. Ideally, the average
-  Unix system administrator should be able to go from a
-  downloaded release archive to a running installation in 3 or 4
-  steps at most.
-
-  The design strategy chosen to achieve that result is that
-  simple setups should be simple, and complex setups should be
-  possible.
 
 
 What does Postmaster do?
