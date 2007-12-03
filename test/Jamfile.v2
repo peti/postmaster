@@ -1,8 +1,8 @@
 # postmaster/test/Jamfile.v2
 
-# These tests are obsolele and disabled until further notice.
-#
-# test-suite postmaster_tests
-#   : [ run route-parser.cpp       /boost//unit_test_framework ]
-#     [ run pattern-matching.cpp   /boost//unit_test_framework ]
-#   ;
+test-suite postmaster_tests
+  : [ run strong-typedef.cpp     /boost//unit_test_framework ]
+    [ run cf-file.cpp            /boost//unit_test_framework ]
+#   [ run route-parser.cpp       /boost//unit_test_framework ]
+#   [ run pattern-matching.cpp   /boost//unit_test_framework ]
+  ;

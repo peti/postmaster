@@ -1,0 +1,58 @@
+  @example.com  @example.org
+  @example.org  mx.example.net
+
+[core]
+  logger              = syslog
+  user-id             = "postmaster"
+  group-id            = "nobody"
+  pid-file            = "/var/run/postmaster.pid"
+  spool-directory     = "/var/spool/mailqueue"
+  local-mailer        = procmail
+
+[syslog]
+  ident               = "postmaster"
+  facility            = "mail"
+
+[logfile "system-wide-logfile"]
+  file                = "/var/log/postmaster-%Y-%m-%d"
+
+[pipe "procmail"]
+  exec                = "abc\"def" "/usr/bin/procmail" "-f" "${MAIL_FROM}" "-d" "${RCPT_TO}"
+  max_rcpt_to         = 16
+
+[wild "relay.\"example.org"]
+      claus = peter
+
+[relay "relay.example.org"]
+  name                = relay.example.org     # redundant
+  address             = 10.0.0.1
+  address             = 10.0.0.2
+
+[smtpd "mx.example.net"]
+  name                = mx.example.net        # redundant
+  listen-port         = 25                    # default is mx.example.net:25
+  routing-table       = extern
+
+[smtpd "localhost"]
+  listen-port         = ipv6-localhost:submission   # ::1:587
+  logger              = system-wide-logfile
+  routing-table       = local-routes
+  local-rcpt-to       = yes
+
+[route]
+  postmaster                          joe
+  postmaster@acme.example.net         postmaster
+  postmaster@acme.example.org         postmaster
+
+  file "/etc/postmaster.rt"
+
+[route "local-routes"]
+  # simulate sendmail for processes that can connect to localhost
+  root@         postmaster
+  bin@          postmaster
+  cron@         postmaster
+  games@        postmaster
+
+[route "extern"]
+  @example.com  @example.org
+  @example.org  mx.example.net
