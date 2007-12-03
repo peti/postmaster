@@ -26,4 +26,14 @@
         adns_if_noautosys or by (b) calling adns_processany() every now and
         then.
     </note>
+    <note priority="medium" time="1196612135">
+        Make timeout visible in result values.
+
+        In continuation passing, a good timeout combinator would
+        have the following signature:
+
+          timeout :: Int -> IO a -> (Maybe a -> IO b) -> IO b
+
+        Our current timeout API is cumbersome in comparison.
+    </note>
 </todo>
