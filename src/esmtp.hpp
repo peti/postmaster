@@ -3,6 +3,7 @@
 
 #include "parser.hpp"
 #include "error.hpp"
+#include <boost/range.hpp>
 
 namespace postmaster
 {
@@ -10,9 +11,7 @@ namespace postmaster
   {
     typedef char const                                  char_type;
     typedef char_type *                                 iterator;
-    typedef std::pair<iterator,iterator>                range;
-
-    typedef std::pair<char const *, char const *>       range;
+    typedef boost::iterator_range<iterator>             range;
     PP_SPIRIT_DEFINE_CLOSURE(range);
 
     spirit::chlit<char_type> const                      sp_p           = ' ';
@@ -52,10 +51,10 @@ namespace postmaster
         return (r.hit ? r.stop : 0);
       }
 
-      void ehlo(range const & name)             { std::cout << "EHLO \"" << std::string(name.first, name.second) << '\"' << std::endl;  }
-      void helo(range const & name)             { std::cout << "HELO \"" << std::string(name.first, name.second) << '\"' << std::endl;  }
-      void noop(range const & str)              { std::cout << "NOOP \"" << std::string(str.first,  str.second)  << '\"' << std::endl;  }
-      void unrecognized(range const & line)     { std::cout << "unrecognized \"" << std::string(line.first, line.second) << '\"' << std::endl;  }
+      void ehlo(range const & name)             { std::cout << "EHLO \"" << std::string(name.begin(), name.end()) << '\"' << std::endl;  }
+      void helo(range const & name)             { std::cout << "HELO \"" << std::string(name.begin(), name.end()) << '\"' << std::endl;  }
+      void noop(range const & str)              { std::cout << "NOOP \"" << std::string(str.begin(),  str.end())  << '\"' << std::endl;  }
+      void unrecognized(range const & line)     { std::cout << "unrecognized \"" << std::string(line.begin(), line.end()) << '\"' << std::endl;  }
     };
 
 
