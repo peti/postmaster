@@ -196,7 +196,16 @@ namespace postmaster
       task_id schedule(task const & t, second_t from_now = 0u)
       {
         BOOST_ASSERT(t);
+#if 0
+        // Enabling this line would make the core very safe (but very
+        // expensive). In theory, a timeout might be registered while the core
+        // time is so old that real time is past the timeout already. In
+        // practice, that should never happen because the core time is updated
+        // every time epoll_wait() returns, which is the only blocking call in
+        // this code. So while core time might possibly be, say a second,
+        // behind real time, even that is highly unlikely.
         if (from_now > 0) update_core_time();
+#endif
         task_queue::iterator const i( _tasks.insert(std::make_pair(_now + from_now, t)) );
         return std::make_pair(i->first, i);
       }
@@ -275,6 +284,7 @@ namespace postmaster
             signal_scope const allow_signals;
             rc = epoll_wait(_epoll_fd, ev, sizeof(ev) / sizeof(epoll_event), timeout);
           }
+          update_core_time();
           if (rc == -1)
           {
             if (errno == EINTR) continue;
@@ -702,7 +712,7 @@ namespace postmaster
       typedef boost::function1<void, char *>            input_handler;
       typedef boost::function1<void, char const *>      output_handler;
 
-      basic_socket(scheduler & io, scheduler::socket_id fd) : _io(io), _sock(fd)
+      basic_socket(scheduler & io, socket_id fd) : _io(io), _sock(fd)
       {
         BOOST_ASSERT(fd >= 0);
         int const rc( fcntl(fd, F_GETFL, 0) );
@@ -785,7 +795,7 @@ namespace postmaster
         }
         f(sock, &addr, len);
       }
-      if (errno != EWOULDBLOCK && errno == EAGAIN)
+      if (errno != EWOULDBLOCK && errno != EAGAIN)
         throw system_error(errno, "failed to accept() new connection");
     }
 
