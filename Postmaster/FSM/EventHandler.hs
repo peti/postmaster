@@ -1,7 +1,7 @@
 {-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster.FSM.EventHandler
-   Copyright   :  (c) 2007-02-02 by Peter Simons
+   Copyright   :  (c) 2004-2008 by Peter Simons
    License     :  GPL2
 
    Maintainer  :  simons@cryp.to
