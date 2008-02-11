@@ -15,6 +15,8 @@ import Foreign
 import Control.Exception
 import Control.Concurrent.MVar
 import Control.Monad.RWS hiding ( local )
+import Control.Monad.Trans
+import Control.Monad.State
 import System.Directory
 import System.IO
 import Postmaster.Base

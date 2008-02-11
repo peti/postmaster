@@ -17,6 +17,8 @@ import Data.Dynamic             ( Typeable, fromDynamic )
 import Data.Unique              ( Unique, newUnique )
 import Control.Concurrent       ( forkIO, threadDelay, myThreadId, killThread )
 import Control.Exception
+import Control.Monad
+import Control.Monad.Trans
 import Control.Monad.RWS hiding ( local )
 import System.IO
 import System.IO.Error

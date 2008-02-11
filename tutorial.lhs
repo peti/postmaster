@@ -39,6 +39,7 @@ the details.
 > import System.IO
 > import System.Time
 > import System.Posix.User
+> import Control.Monad.Trans
 > import Network.Socket ( SockAddr(..) )
 > import Data.Char
 > import Data.List

@@ -7,16 +7,18 @@
    Stability   :  provisional
    Portability :  Haskell 2-pre
 
-   Postmaster's IO driver for "System.IO.Driver" and general
-   initialization functions.
- -}
+   Postmaster's IO driver and general initialization functions.
+-}
 
 module Postmaster.Main where
 
 import Prelude hiding ( catch )
 import Data.Maybe
 import Control.Concurrent.MVar
+import Control.Monad
 import Control.Monad.RWS hiding ( local )
+import Control.Monad.Trans
+import Control.Monad.State
 import System.IO
 import System.Posix.Signals
 import Network ( PortID(..) )

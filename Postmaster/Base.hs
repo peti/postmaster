@@ -20,6 +20,8 @@ import Foreign
 import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
+import Control.Monad.Trans
+import Control.Monad.State
 import Control.Monad.RWS hiding ( local )
 import Control.Concurrent
 import Data.Typeable
