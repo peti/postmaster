@@ -26,14 +26,10 @@ HDIFILES :=							\
   -i $(HDI_PATH)/unix,$(HDI_FILE)/unix/unix.haddock		\
   -i $(HDI_PATH)/parsec,$(HDI_FILE)/parsec/parsec.haddock
 
-MONODIRS := dns email hopenssl syslog
-
 ##### build postmaster binary
 
 .PHONY: all
 
-    # TODO: Postmaster/Meta.hs is missing because
-    # Haddock can't deal with it.
 SRCS := Postmaster.hs					\
 	Postmaster/Base.hs				\
 	Postmaster/FSM.hs				\
@@ -95,22 +91,6 @@ NOTES:		.todo
 	@devtodo -T -f all --date-format '%Y-%m-%d'
 	@mv TODO $@
 
-##### TAGS file
-
-.PHONY: tags
-
-tags::
-	@rm -f TAGS
-	@$(MAKE) TAGS
-
-TAGS:		$(SRCS)
-	@rm -f tags TAGS
-	@echo "Updating TAGS ... "
-	@(find . -name "*.hs*" && \
-	  find /usr/local/src/ghc-current/libraries -name "*.hs*") \
-	   | xargs hasktags
-	@rm -f tags
-
 ##### distribution
 
 .PHONY: dist mkdist
@@ -131,21 +111,11 @@ index.html:	README
 
 clean::
 	@rm -rf $(OBJDIR)
-	@rm -f postmaster TODO TAGS tags
+	@rm -f postmaster
 
 distclean::	clean
 	@rm -rf $(DOCDIR) index.html
-	@rm -f postmaster-*.tar.gz NOTES
-	@rm -rf $(MONODIRS)
+	@rm -f postmaster-*.tar.gz
 
 redate::
-	redate Postmaster.hs README
-
-init-src::	$(MONODIRS) $(SRCS)
-	@-mkdir $(DOCDIR)
-	@rm -f MT/monotonerc
-	@ln -s ../.monotonerc MT/monotonerc
-
-$(MONODIRS):
-	monotone --db=/home/monodbs/simons.db --branch=to.cryp.hs.$@ co $@
-	@(cd $@ && ln -s ../.monotonerc MT/monotonerc)
+	redate README
