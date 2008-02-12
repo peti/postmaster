@@ -1,4 +1,4 @@
-{-# OPTIONS -fglasgow-exts #-}
+{-# LANGUAGE Rank2Types #-}
 {- |
    Module      :  Postmaster.Base
    Copyright   :  (c) 2004-2008 by Peter Simons

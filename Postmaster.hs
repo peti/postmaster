@@ -1,4 +1,3 @@
-{-# OPTIONS -fglasgow-exts #-}
 {- |
    Module      :  Postmaster
    Copyright   :  (c) 2004-2008 by Peter Simons

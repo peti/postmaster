@@ -1,4 +1,4 @@
-{-# OPTIONS -fglasgow-exts #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {- |
    Module      :  Postmaster.IO
    Copyright   :  (c) 2004-2008 by Peter Simons

@@ -1,4 +1,4 @@
-> {-# OPTIONS -fglasgow-exts #-}
+> {-# LANGUAGE DeriveDataTypeable #-}
 
 A Walk Through "Config.hs"
 ==========================

@@ -1,4 +1,4 @@
-{-# OPTIONS -fglasgow-exts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
 {- |
    Module      :  Postmaster.FSM.DNSResolver
    Copyright   :  (c) 2004-2008 by Peter Simons
