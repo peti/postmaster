@@ -1,7 +1,7 @@
 Postmaster ESMTP Server
 =======================
 
-:Latest Release: postmaster-2008-02-11.tar.gz_
+:Latest Release: postmaster-2006-04-06.tar.gz_
 :Darcs:          darcs_ get http://postmaster.cryp.to/ postmaster
 
 .. contents::
@@ -130,11 +130,25 @@ Documentation
 Building Postmaster
 -------------------
 
-  To compile the software, you need GHC_ version 6.4 or
-  later. Furthermore, you'll need the `GNU adns`_ library
-  and OpenSSL_ installed.
+  To compile the software, you need GHC_ version 6.6 or
+  later (only tested with GHC 6.8.x). Furthermore, you'll
+  need the `GNU adns`_ and OpenSSL_ C libraries installed.
+
+  You can install through your distro, if it provides postmaster,
+  or from source. The source can be gotten from the Darcs repo or
+  Hackage.
 
   Once you've fetched the sources, do the following:
+
+  1) Build and install through Cabal as for other Haskell packages:
+
+        runhaskell Setup configure --user --prefix=$HOME
+        runhaskell Setup build
+        runhaskell Setup install --user
+
+  (You may want to remove the --user flag when installing as root.)
+
+  You can also install via the GNU Autotools.
 
   1) Edit ``GNUmakefile`` to fit your system. You'll have to
      adapt the variable ``HDI_PATH`` to point to the base
@@ -157,10 +171,11 @@ Building Postmaster
      ``hopenssl/Digest.hs`` -- or upgrade to OpenSSL 0.9.7e
      or later.
 
+
 Copyleft
 --------
 
-  Copyright (c) 2004-2008 Peter Simons <simons@cryp.to>. All
+  Copyright (c) 2005 Peter Simons <simons@cryp.to>. All
   rights reserved. This software is released under the terms
   of the `GNU General Public License
   <http://www.gnu.org/licenses/gpl.html>`_.
@@ -179,7 +194,7 @@ Copyleft
 
 .. _Sendmail: http://sendmail.org/
 
-.. _postmaster-2008-02-11.tar.gz: http://postmaster.cryp.to/postmaster-2008-02-11.tar.gz
+.. _postmaster-2006-04-06.tar.gz: http://postmaster.cryp.to/postmaster-2006-04-06.tar.gz
 
 .. _known events: docs/Text.ParserCombinators.Parsec.Rfc2821.html#t%3AEvent
 
