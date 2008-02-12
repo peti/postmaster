@@ -1,0 +1,55 @@
+name:                postmaster
+-- What version is this anyway?
+version:             0.1
+synopsis:            Postmaster ESMTP Server
+description:         Postmaster implements an ESMTP server. Given a configuration,
+                     it starts up and listens for incoming SMTP connections, handles
+                     them, and pipes the accepted e-mail messages into an arbitrary
+                     local mailer of your choice. A good local mailer is Procmail.
+
+                     Beyond that, you can configure and modify every little step
+                     of the SMTP transaction. All the real work is done through
+                     a call-back function. Postmaster triggers an "event" every time
+                     a state change is required, and hopes that the call-back does
+                     whatever is necessary.
+category:            Network
+license:             GPL
+license-file:        LICENSE
+author:              Peter Simons
+maintainer:          Peter Simons <simons@cryp.to>
+
+Cabal-Version:       >= 1.2
+Tested-With:         GHC==6.8.2
+build-type:          Simple
+data-files:          tutorial.lhs, README
+-- Extra-Source-Files:  postmaster/Syslog.hsc
+
+Library
+        build-depends:       base, haskell98, directory, mtl, network, unix, template-haskell,
+                             monadenv, blockio, hsemail, child, hsdns, hopenssl
+        extensions:          TemplateHaskell, DeriveDataTypeable, Rank2Types, ForeignFunctionInterface, GeneralizedNewtypeDeriving
+        exposed-modules:
+                             Network.Postmaster
+                             Network.Postmaster.Base
+                             Network.Postmaster.FSM
+                             Network.Postmaster.FSM.Announce
+                             Network.Postmaster.FSM.DNSResolver
+                             Network.Postmaster.FSM.DataHandler
+                             Network.Postmaster.FSM.EhloPeer
+                             Network.Postmaster.FSM.EventHandler
+                             Network.Postmaster.FSM.HeloName
+                             Network.Postmaster.FSM.MailFrom
+                             Network.Postmaster.FSM.MailID
+                             Network.Postmaster.FSM.PeerAddr
+                             Network.Postmaster.FSM.PeerHelo
+                             Network.Postmaster.FSM.SessionState
+                             Network.Postmaster.FSM.Spooler
+                             Network.Postmaster.IO
+                             Network.Postmaster.Main
+                             Network.Postmaster.Meta
+                             Network.Postmaster.Syslog
+
+
+        hs-source-dirs:      Network, .
+        ghc-options:         -O2 -Wall -optl-Wl,-s
+        ghc-prof-options:    -prof -auto-all
