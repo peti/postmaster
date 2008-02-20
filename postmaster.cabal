@@ -8,18 +8,19 @@ Description:            Postmaster implements an ESMTP server. Given a configura
                         Beyond that, you can configure and modify every little step
                         of the SMTP transaction. All the real work is done through
                         call-back functions.
+Homepage:               http://postmaster.cryp.to/
 Category:               Network
 License:                GPL
 License-File:           COPYING
 Author:                 Peter Simons
 Maintainer:             Peter Simons <simons@cryp.to>
 Data-Files:             README
+Build-Type:             Simple
 
 Executable:             postmaster
 Main-Is:                tutorial.lhs
-GHC-Options:            -O -Wall -threaded
+GHC-Options:            -Wall -threaded
 Extra-Libraries:        adns crypto
-Hs-Source-Dirs:         ., dns, syslog, email, hopenssl
 Build-Depends:          base, haskell98, directory, mtl, network, unix, parsec,
                         containers, bytestring, old-time, hsyslog, hsdns, hsemail,
                         hopenssl
