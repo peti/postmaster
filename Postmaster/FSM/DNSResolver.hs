@@ -12,7 +12,7 @@
 module Postmaster.FSM.DNSResolver where
 
 import Control.Monad.RWS hiding ( local )
-import Network.DNS
+import ADNS
 import Data.Typeable
 import Postmaster.Base
 import Control.Monad.Trans
@@ -33,10 +33,10 @@ getDNSResolver = do
   return f
 
 queryA :: HostName -> Smtpd (Maybe [HostAddress])
-queryA h = getDNSResolver >>= \r -> liftIO $ query resolveA r h
+queryA h = getDNSResolver >>= \r -> liftIO $ ADNS.queryA r h
 
 queryPTR :: HostAddress -> Smtpd (Maybe [HostName])
-queryPTR h = getDNSResolver >>= \r -> liftIO $ query resolvePTR r h
+queryPTR h = getDNSResolver >>= \r -> liftIO $ ADNS.queryPTR r h
 
 queryMX :: HostName -> Smtpd (Maybe [(HostName, HostAddress)])
-queryMX h = getDNSResolver >>= \r -> liftIO $ query resolveMX r h
+queryMX h = getDNSResolver >>= \r -> liftIO $ ADNS.queryMX r h
