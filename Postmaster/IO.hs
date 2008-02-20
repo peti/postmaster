@@ -13,13 +13,13 @@ module Postmaster.IO where
 
 import Data.List
 import Data.Maybe
-import Data.Dynamic             ( Typeable, fromDynamic )
-import Data.Unique              ( Unique, newUnique )
-import Control.Concurrent       ( forkIO, threadDelay, myThreadId, killThread )
+import Data.Dynamic             ( Typeable )
+import Control.Concurrent       ( forkIO )
 import Control.Exception
 import Control.Monad.RWS hiding ( local )
 import System.IO
 import System.IO.Error
+import System.Timeout
 import Network                  ( listenOn, PortID(..) )
 import Network.Socket
 import Text.ParserCombinators.Parsec.Rfc2821
@@ -51,6 +51,8 @@ flush n (Buf cap ptr len) = assert (n <= len) $ do
       len' = (fromIntegral len) - (fromIntegral n)
   when (len' > 0) (copyArray ptr ptr' len')
   return (Buf cap ptr (fromIntegral len'))
+
+-- |Timeouts are represented in microseconds.
 
 type Timeout = Int
 
@@ -226,30 +228,3 @@ safeReply hOut r = safeWrite (hPutStr hOut (show r))
 
 safeFlush :: WriteHandle -> Smtpd ()
 safeFlush hOut = safeWrite (hFlush hOut)
-
-
--- * Timeout
-
--- An internal type that is thrown as a dynamic exception to interrupt the
--- running IO computation when the timeout has expired.
-
-data TimeoutEvent = TimeoutEvent Unique deriving (Eq, Typeable)
-
--- |Wrap an 'IO' computation to time out and return @Nothing@ if it hasn't
--- succeeded after @n@ microseconds. If the computation finishes before the
--- timeout expires, @Just a@ is returned. Timeouts are specified in microseconds
--- (@1\/10^6@ seconds). Negative values mean \"wait indefinitely\". When
--- specifying long timeouts, be careful not to exceed @maxBound :: Int@.
-
-timeout :: Int -> IO a -> IO (Maybe a)
-timeout n f
-    | n <  0    = fmap Just f
-    | n == 0    = return Nothing
-    | otherwise = do
-        pid <- myThreadId
-        ex  <- fmap TimeoutEvent newUnique
-        handleJust (\e -> dynExceptions e >>= fromDynamic >>= guard . (ex ==))
-                   (\_ -> return Nothing)
-                   (bracket (forkIO (threadDelay n >> throwDynTo pid ex))
-                            (killThread)
-                            (\_ -> fmap Just f))
