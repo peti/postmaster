@@ -15,16 +15,14 @@ module Postmaster.Main where
 import Prelude hiding ( catch )
 import Data.Maybe
 import Control.Concurrent.MVar
-import Control.Monad
 import Control.Monad.RWS hiding ( local )
-import Control.Monad.Trans
 import Control.Monad.State
 import System.IO
 import System.Posix.Signals
 import Network ( PortID(..) )
 import Network.Socket
 import Network.BSD ( getHostName )
-import Network.DNS
+import ADNS
 import Foreign
 import Postmaster.Base
 import Postmaster.FSM
@@ -34,7 +32,7 @@ import Postmaster.FSM.PeerAddr     ( setPeerAddr     )
 import Postmaster.FSM.SessionState ( setSessionState )
 import Postmaster.IO
 import Text.ParserCombinators.Parsec.Rfc2821
-import Syslog
+import System.Posix.Syslog
 
 -- * Speaking ESMTP
 
