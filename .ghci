@@ -1,5 +1,1 @@
-:set -Wall -hidir .objs -odir .objs
-:set -idns -ignore-package hsdns
-:set -iemail -ignore-package hsemail
-:set -ihopenssl -ignore-package hopenssl
-:set -isyslog -ignore-package syslog
+:set -Wall
