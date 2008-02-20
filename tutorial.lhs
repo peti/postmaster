@@ -325,6 +325,7 @@ Dynamic Blacklisting
 >             then return r
 >             else do yell (Msg (msg sa))
 >                     say 5 5 4 "no SMTP service here"
+>       Just (SockAddrInet6 _ _ _ _) -> return r
 >   where
 >   msg = showString "blacklist: refuse peer " . show
 
@@ -335,8 +336,9 @@ whenever we feel like it::
 > ban = do
 >   peer <- getPeerAddr
 >   case peer of
->     Nothing                    -> return ()
->     Just (SockAddrUnix _)      -> return ()
+>     Nothing                      -> return ()
+>     Just (SockAddrUnix _)        -> return ()
+>     Just (SockAddrInet6 _ _ _ _) -> return ()
 >     Just sa@(SockAddrInet _ a) -> do
 >       yell (Msg (msg sa))
 >       now <- liftIO getClockTime
