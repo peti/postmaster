@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
 {- |
    Module      :  Postmaster.FSM.SessionState
    Copyright   :  (c) 2004-2008 by Peter Simons
@@ -12,6 +13,10 @@ module Postmaster.FSM.SessionState where
 
 import Postmaster.Base
 import Text.ParserCombinators.Parsec.Rfc2821
+import Data.Typeable
+
+newtype SmtpSessionState = SSST SessionState
+                           deriving (Typeable)
 
 -- |Local Variable: @SESSIONSTATE :: 'SessionState'@
 
@@ -19,7 +24,7 @@ sessionState :: SmtpdVariable
 sessionState = defineLocal "sessionstate"
 
 setSessionState :: SessionState -> Smtpd ()
-setSessionState sst = sessionState (`setVar` sst)
+setSessionState sst = sessionState (`setVar` (SSST sst))
 
 getSessionState :: Smtpd SessionState
-getSessionState = sessionState (`getVarDef` Unknown)
+getSessionState = sessionState (`getVarDef` (SSST Unknown)) >>= \(SSST sst) -> return sst
