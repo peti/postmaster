@@ -1,13 +1,10 @@
-/.objs
+/COPYING
 /Setup
 /Setup.hi
 /Setup.lhs
 /Setup.o
 /_darcs/*
 /dist
-/hopenssl
-/hsdns
-/hsemail
-/hsyslog
-/postmaster
-/COPYING
+/index.html
+/notfound.html
+/postmaster-*.tar.gz
