@@ -1,6 +1,13 @@
+/.objs
+/Setup
+/Setup.hi
 /Setup.lhs
+/Setup.o
 /_darcs/*
-/dns
-/email
+/dist
 /hopenssl
-/syslog
+/hsdns
+/hsemail
+/hsyslog
+/postmaster
+/COPYING
