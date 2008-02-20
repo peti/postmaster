@@ -5,6 +5,7 @@
 /Setup.o
 /_darcs/*
 /dist
+/docs
 /index.html
 /notfound.html
 /postmaster-*.tar.gz

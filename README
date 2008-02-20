@@ -1,7 +1,7 @@
 Postmaster ESMTP Server
 =======================
 
-:Latest Release: postmaster-2006-04-06.tar.gz_
+:Latest Release: postmaster-0.1.tar.gz_
 :Darcs:          darcs_ get http://postmaster.cryp.to/ postmaster
 
 .. contents::
@@ -51,7 +51,7 @@ What can it do?
   through a call-back function. Postmaster triggers an
   "event" every time a state change is required, and hopes
   that the call-back does whatever is necessary. Among the
-  `known events`_, this one is popular::
+  known events, this one is popular::
 
     AddRcptTo Mailbox
 
@@ -194,9 +194,7 @@ Copyleft
 
 .. _Sendmail: http://sendmail.org/
 
-.. _postmaster-2006-04-06.tar.gz: http://postmaster.cryp.to/postmaster-2006-04-06.tar.gz
-
-.. _known events: docs/Text.ParserCombinators.Parsec.Rfc2821.html#t%3AEvent
+.. _postmaster-0.1.tar.gz: http://postmaster.cryp.to/postmaster-0.1.tar.gz
 
 .. _GHC: http://haskell.org/ghc/
 
