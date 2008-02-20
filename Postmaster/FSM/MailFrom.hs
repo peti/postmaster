@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
 {- |
    Module      :  Postmaster.FSM.MailFrom
    Copyright   :  (c) 2004-2008 by Peter Simons
@@ -12,6 +13,10 @@ module Postmaster.FSM.MailFrom where
 
 import Postmaster.Base
 import Text.ParserCombinators.Parsec.Rfc2821
+import Data.Typeable
+
+newtype SmtpMailbox = SMB Mailbox
+                      deriving (Typeable)
 
 -- |Local Variable: @MAILFROM :: 'Mailbox'@
 
@@ -22,10 +27,10 @@ handleMailFrom :: EventT
 handleMailFrom f e = do
   r <- f e
   case (e, isSuccess r) of
-    (SetMailFrom x, True) -> mailFrom (`setVar` x)
+    (SetMailFrom x, True) -> mailFrom (`setVar` (SMB x))
     (ResetState, _)       -> mailFrom unsetVar
     (_, _)                -> return ()
   return r
 
 getMailFrom :: Smtpd Mailbox
-getMailFrom = mailFrom getVar_
+getMailFrom = mailFrom getVar_ >>= \(SMB x) -> return x
