@@ -4,15 +4,15 @@
 
 GHC	 := ghc
 OBJDIR	 := .objs
-HFLAGS	 := -threaded -O2 -funbox-strict-fields         \
+HFLAGS	 := -threaded -O2 -funbox-strict-fields -Wall   \
 	    -odir $(OBJDIR) -hidir $(OBJDIR)		\
-	    -idns	-ignore-package hsdns		\
+	    -ihsdns	-ignore-package hsdns		\
 		'-\#include <adns.h>'			\
-		'-\#include <sys/poll.h>'		\
-	    -iemail	-ignore-package hsemail		\
+		'-\#include <errno.h>'			\
+	    -ihsemail	-ignore-package hsemail		\
 	    -ihopenssl	-ignore-package hopenssl	\
 		'-\#include <openssl/evp.h>'		\
-	    -isyslog	-ignore-package syslog		\
+	    -ihsyslog	-ignore-package hsyslog		\
 
 DOCDIR	 := docs
 HADDOCK	 := haddock
@@ -47,17 +47,14 @@ SRCS := Postmaster.hs					\
 	Postmaster/FSM/Spooler.hs			\
 	Postmaster/IO.hs				\
 	Postmaster/Main.hs				\
-	dns/Data/Endian.hs				\
-	dns/Network/DNS.hs				\
-	dns/Network/DNS/ADNS.hs				\
-	dns/Network/DNS/PollResolver.hs			\
-	dns/Network/IP/Address.hs			\
-	dns/System/Posix/GetTimeOfDay.hs		\
-	dns/System/Posix/Poll.hs			\
-	email/Text/ParserCombinators/Parsec/Rfc2234.hs	\
-	email/Text/ParserCombinators/Parsec/Rfc2821.hs	\
+	hsdns/ADNS.hs					\
+	hsdns/ADNS/Base.hs				\
+	hsdns/ADNS/Endian.hs				\
+	hsdns/ADNS/Resolver.hs				\
+	hsemail/Text/ParserCombinators/Parsec/Rfc2234.hs \
+	hsemail/Text/ParserCombinators/Parsec/Rfc2821.hs \
 	hopenssl/OpenSSL/Digest.hs			\
-	syslog/Syslog.hs
+	hsyslog/System/Posix/Syslog.hs
 
 all::	postmaster
 
