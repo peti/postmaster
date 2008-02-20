@@ -20,18 +20,18 @@ module Postmaster
   , module Control.Monad.RWS
   , module Data.Typeable
   , module Network
-  , module Network.DNS
+  , module ADNS
   , module Text.ParserCombinators.Parsec.Rfc2821
-  , module Syslog
+  , module System.Posix.Syslog
   )
   where
 
 import Network ( PortID(..) )
 import Control.Monad.RWS hiding ( local )
-import Network.DNS hiding ( Debug )
+import ADNS hiding ( Debug, queryMX, queryA, queryPTR )
 import Data.Typeable
 import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
-import Syslog
+import System.Posix.Syslog
 import Postmaster.Base
 import Postmaster.FSM
 import Postmaster.IO
