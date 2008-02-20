@@ -1,4 +1,4 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types, DeriveDataTypeable #-}
 {- |
    Module      :  Postmaster.Base
    Copyright   :  (c) 2004-2008 by Peter Simons
@@ -20,7 +20,6 @@ import Foreign
 import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
-import Control.Monad.Trans
 import Control.Monad.State
 import Control.Monad.RWS hiding ( local )
 import Control.Concurrent
