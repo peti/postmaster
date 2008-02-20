@@ -1,10 +1,10 @@
-> {-# LANGUAGE DeriveDataTypeable #-}
+> {-# LANGUAGE DeriveDataTypeable, PatternGuards #-}
 
 A Walk Through "Config.hs"
 ==========================
 
 :Author: Peter Simons <simons@cryp.to>
-:Date:   2005-02-13
+:Date:   2008-02-20
 :Note:   This text is *nowhere* near being complete.
 
 .. contents::
@@ -39,7 +39,6 @@ the details.
 > import System.IO
 > import System.Time
 > import System.Posix.User
-> import Control.Monad.Trans
 > import Network.Socket ( SockAddr(..) )
 > import Data.Char
 > import Data.List
