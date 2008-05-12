@@ -1,4 +1,26 @@
-                     Postmaster ESMTP Server
+#+TITLE: Postmaster ESMTP Server            -*- mode: org; fill-column: 79; -*-
+#+STARTUP: hidestars odd
+
+* Capabilities
+
+*** Accept e-mail for local users
+
+*** Inject e-mail messages
+
+*** Relay e-mail to other MX
+
+*** Full-Pipelining
+
+*** Ultra-Pipelining
+
+
+* Configuration
+
+*** Command line syntax
+
+*** Configuration file
+
+* RFC (non-)conformance
 
 /etc/postmaster.cf:
 ===================
