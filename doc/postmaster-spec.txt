@@ -3,6 +3,8 @@
 
 * Capabilities
 
+*** Listen on arbitrary network interfaces with different configurations
+
 *** Accept e-mail for local users
 
 *** Inject e-mail messages
@@ -11,356 +13,324 @@
 
 *** Full-Pipelining
 
+    Upon receiving MAIL FROM and RCPT TO, Postmaster determines the responsible
+    target for this (part of the) transaction. If that target is an ESMTP relay
+    or an LMTP local mailer, Postmaster opens a connection, says HELO, MAIL
+    FROM and RCPT TO, and from then on just acts as a proxy between the client
+    and the target.
+
+    Full pipelining always involves the mail spool, because Postmaster may have
+    to take that session over if the outgoing connection fails for non-protocol
+    reasons, i.e. network failure.
+
 *** Ultra-Pipelining
 
+*** Spam Counter-Measures
+
+***** SPF support via <http://www.libspf2.org/>.
 
 * Configuration
 
-*** Command line syntax
-
-*** Configuration file
-
-* RFC (non-)conformance
-
-/etc/postmaster.cf:
-===================
-
-  | [core]
-  |   logger              = syslog
-  |   user-id             = "postmaster"
-  |   group-id            = "nobody"
-  |   pid-file            = "/var/run/postmaster.pid"
-  |   spool-directory     = "/var/spool/mailqueue"
-  |   local-mailer        = procmail
-  |
-  | [syslog]
-  |   ident               = "postmaster"
-  |   facility            = "mail"
-  |
-  | [logfile "system-wide-logfile"]
-  |   file                = "/var/log/postmaster-%Y-%m-%d"
-  |
-  | [pipe "procmail"]
-  |   exec                = "/usr/bin/procmail" "-f" "${MAIL_FROM}" "-d" "${RCPT_TO}"
-  |   max_rcpt_to         = 16
-  |
-  | [relay "relay.example.org"]
-  |   name                = relay.example.org   # redundant
-  |   address             = 10.0.0.1
-  |   address             = 10.0.0.2
-  |
-  | [smtpd "mx.example.net"]
-  |   name                = mx.example.net      # redundant
-  |   listen-port         = 25                  # default would have been mx.example.net:25
-  |   routing-table       = extern
-  |
-  | [smtpd "localhost"]
-  |   listen-port         = ipv6-localhost:submission   # ::1:587
-  |   logger              = system-wide-logfile
-  |   routing-table       = local-routes
-  |   local-rcpt-to       = yes
-  |
-  | [route]
-  |   postmaster                          joe
-  |   postmaster@acme.example.net         postmaster
-  |   postmaster@acme.example.org         postmaster
-  |
-  |   file "/etc/postmaster.rt"
-  |
-  | [route "extern"]
-  |   @example.com  @example.org
-  |   @example.org  mx.example.net
-  |
-  | [route "local-routes"]
-  |   # simulate sendmail for processes that can connect to localhost
-  |   root@         postmaster
-  |   bin@          postmaster
-  |   cron@         postmaster
-  |   games@        postmaster
-
-Syntax:
-=======
-
-  cf_file       = ( '[' atom [quoted_string] ']' ([assignment] ['\r'] '\n')* )*
-  assignment    = atom ['='] word+
-  word          = atom | quoted_string
-  quoted_string = '"' ( quoted_pair | "[^\\\"\r\n]+" )* '"'
-  comment       = "#[^\r\n]*"
-  quoted_pair   = '\\' <anychar>
-  atom          = "[^\x00-\x1F \\\"#=[]\x7F]+"
-
-  Note that the '=' in an assignment is optional, so the [route]
-  section does, technically, not use special syntax. The fact
-  that routes are written without an '=' is a convention.
-
-  Config files can be represented as scoped variable assignments,
-  i.e.:
-
-    smtpd."mx.example.net".name = mx.example.net
-    smtpd."mx.example.net".listen-port = 25
-    smtpd."mx.example.net".routing-table = extern
-    route."".postmaster = joe
-    route."".postmaster@acme.example.net = postmaster
-    route."".postmaster@acme.example.org = postmaster
-    route."".file = "/etc/postmaster.rt"
-    route."extern".@example.com = @example.org
-    route."extern".@example.org = mx.example.net
-
-  This fact allows for a simple mapping to command line flags. A
-  section, say [smtpd "foo"], can be declared by specifying
-  --smtpd="foo". Afterwards, parameterized flags like
-  --smtpd-"foo"-listen-port become available.
-
-  Arguably, the [route] section's representation is quite odd.
-
-Routing:
-========
-
-  The routing table maps RCPT TO addresses to local targets. The
-  simplest form of local targets are system user names --
-  addresses without an @ --, which go to the default local
-  mailer. In theory, all the configuration postmaster needs is
-  something like this:
+*** Example =postmaster.cf=
+
+    : [core]
+    :   logger              = syslog
+    :   user-id             = "postmaster"
+    :   group-id            = "nobody"
+    :   pid-file            = "/var/run/postmaster.pid"
+    :   spool-directory     = "/var/spool/mailqueue"
+    :   local-mailer        = procmail
+    :
+    : [syslog]
+    :   ident               = "postmaster"
+    :   facility            = "mail"
+    :
+    : [logfile "system-wide-logfile"]
+    :   file                = "/var/log/postmaster-%Y-%m-%d"
+    :
+    : [pipe "procmail"]
+    :   exec                = "/usr/bin/procmail" "-f" "${MAIL_FROM}" "-d" "${RCPT_TO}"
+    :   max_rcpt_to         = 16
+    :
+    : [relay "relay.example.org"]
+    :   name                = relay.example.org   # redundant
+    :   address             = 10.0.0.1
+    :   address             = 10.0.0.2
+    :
+    : [smtpd "mx.example.net"]
+    :   name                = mx.example.net      # redundant
+    :   listen-port         = 25                  # default would have been mx.example.net:25
+    :   routing-table       = extern
+    :
+    : [smtpd "localhost"]
+    :   listen-port         = ipv6-localhost:submission   # ::1:587
+    :   logger              = system-wide-logfile
+    :   routing-table       = local-routes
+    :   local-rcpt-to       = yes
+    :
+    : [route]
+    :   postmaster                          joe
+    :   postmaster@acme.example.net         postmaster
+    :   postmaster@acme.example.org         postmaster
+    :
+    :   file "/etc/postmaster.rt"
+    :
+    : [route "extern"]
+    :   @example.com  @example.org
+    :   @example.org  mx.example.net
+    :
+    : [route "local-routes"]
+    :   # simulate sendmail for processes that can connect to localhost
+    :   root@         postmaster
+    :   bin@          postmaster
+    :   cron@         postmaster
+    :   games@        postmaster
+
+*** Syntax
+
+    cf_file       = ( '[' atom [quoted_string] ']' ([assignment] ['\r'] '\n')* )*
+    assignment    = atom ['='] word+
+    word          = atom | quoted_string
+    quoted_string = '"' ( quoted_pair | "[^\\\"\r\n]+" )* '"'
+    comment       = "#[^\r\n]*"
+    quoted_pair   = '\\' <anychar>
+    atom          = "[^\x00-\x1F \\\"#=[]\x7F]+"
+
+    Note that the '=' in an assignment is optional, so the [route] section
+    does, technically, not use special syntax. The fact that routes are written
+    without an '=' is a convention.
+
+    Config files can be represented as scoped variable assignments, i.e.:
+
+    : smtpd."mx.example.net".name = mx.example.net
+    : smtpd."mx.example.net".listen-port = 25
+    : smtpd."mx.example.net".routing-table = extern
+    : route."".postmaster = joe
+    : route."".postmaster@acme.example.net = postmaster
+    : route."".postmaster@acme.example.org = postmaster
+    : route."".file = "/etc/postmaster.rt"
+    : route."extern".@example.com = @example.org
+    : route."extern".@example.org = mx.example.net
+
+    This fact allows for a simple mapping to command line flags. A section, say
+    [smtpd "foo"], can be declared by specifying --smtpd="foo". Afterwards,
+    parameterized flags like --smtpd-"foo"-listen-port become available.
+
+    Arguably, the [route] section's representation is quite odd.
+
+*** Routing
+
+    The routing table maps RCPT TO addresses to local targets. The simplest
+    form of local targets are system user names -- addresses without an @ --,
+    which go to the default local mailer. In theory, all the configuration
+    postmaster needs is something like this:
+
+    : joe@example.org        joe
+    : joe.doe@example.org    joe
+    : jane@example.org       jane
+    : jane.dow@example.org   jane
+
+    The postmaster.cf file begins with an implicit [route] just to allow this
+    kind of minimalist configuration.
 
-    joe@example.org        joe
-    joe.doe@example.org    joe
-    jane@example.org       jane
-    jane.dow@example.org   jane
+    Other local targets are defined via [relay] or [pipe]. Single-recipient
+    pipes can be written as "|/path/bin ...".
 
-  The postmaster.cf file begins with an implicit [route] just to
-  allow this kind of minimalist configuration.
+*** TODO Do we need a [reject] target?
 
-  Other local targets are defined via [relay] or [pipe].
-  Single-recipient pipes can be written as "|/path/bin ...".
+    Some forms of relaying can be expressed by address rewriting:
 
-  *** TODO: Do we need a [reject] target?
+    : foo@example.com     foo@example.net
+    : @example.org        @example.net
 
-  Some forms of relaying can be expressed by address rewriting:
+    Routes are matched in the same order they are specified. Similarly, the
+    order in which an [smtpd] instance imports routing tables is preserved. The
+    global table, [route], is implicitly imported last.
 
-    foo@example.com     foo@example.net
-    @example.org        @example.net
+    Local names -- names without an @ -- can be used on the left hand-side, but
+    an SMTP dialogue cannot generate them (except 'postmaster'). This fact
+    allows for convenience aliases:
 
-  Routes are matched in the same order they are specified.
-  Similarly, the order in which an [smtpd] instance imports
-  routing tables is preserved. The global table, [route], is
-  implicitly imported last.
+    : postmaster             joe      # can receive mail directly
+    : hostmaster             joe      # cannot
 
-  Local names -- names without an @ -- can be used on the left
-  hand-side, but an SMTP dialogue cannot generate them (except
-  'postmaster'). This fact allows for convenience aliases:
+    The right hand-side may contain lists of targets:
 
-    postmaster             joe      # can receive mail directly
-    hostmaster             joe      # cannot
+    : acme@list.example.org  joe, jane, acme-archive@, @mirror.example.net
 
-  The right hand-side may contain lists of targets:
+    These kind of expansions always involve the mail spool; the transaction
+    fails only if all targets fail. Individual failures generate bounces to
+    <postmaster>, the sender, or both, depending on some yet-to-be-determined
+    configuration.
 
-    acme@list.example.org  joe, jane, acme-archive@, @mirror.example.net
+    Multi-recipient transactions are treated the same way in ESMTP. In LMTP,
+    every RCPT TO receives its own response code, so individual recipients can
+    fail, but multi-target expansions of a single RCPT TO still require a mail
+    spool.
 
-  These kind of expansions always involve the mail spool; the
-  transaction fails only if all targets fail. Individual failures
-  generate bounces to <postmaster>, the sender, or both,
-  depending on some yet-to-be-determined configuration.
+* RFC
 
-  Multi-recipient transactions are treated the same way in ESMTP.
-  In LMTP, every RCPT TO receives its own response code, so
-  individual recipients can fail, but multi-target expansions of
-  a single RCPT TO still require a mail spool.
+*** Conformance
 
-Full Pipelining:
-================
+***** 1428: Transition of Internet Mail from Just-Send-8 to 8bit-SMTP/MIME
 
-  Upon receiving MAIL FROM and RCPT TO, Postmaster determines the
-  responsible target for this (part of the) transaction. If that
-  target is an ESMTP relay or an LMTP local mailer, Postmaster
-  opens a connection, says HELO, MAIL FROM and RCPT TO, and from
-  then on just acts as a proxy between the client and the target.
+      Mail servers are supposed to upgrade 8-bit messages without MIME
+      information to an "unknown-8bit"-encoded MIME message.
 
-  Full pipelining always involves the mail spool, because
-  Postmaster may have to take that session over if the outgoing
-  connection fails for non-protocol reasons, i.e. network
-  failure.
+***** 1652: SMTP Service Extension for 8bit-MIMEtransport
 
-Anti-Spam Mechanisms:
-=====================
+      The ESMTP 8BITMIME extension adds the parameter "BODY={7BIT,8BITMIME}" to
+      the MAIL FROM command. Conforming implementaions must (a) handle 8-bit
+      MIME payload and (b) downgrade the payload to base64 or quoted-printable
+      before relaying it to an MX without 8BITMIME support.
 
-  * SPF support via <http://www.libspf2.org/>.
+      Does this mean that a relay can upgrade payload to 8-bit too?
 
-RFC Conformance:
-================
+      Required for [[*3030%20SMTP%20Service%20Extensions%20for%20Transmission%20of%20Large%20and%20Binary%20MIME%20Messages][ESMTP CHUNKING]].
 
-  1428: Transition of Internet Mail from Just-Send-8 to 8bit-SMTP/MIME
+***** 1846: SMTP 521 Reply Code
 
-    Mail servers are supposed to upgrade 8-bit messages without
-    MIME information to an "unknown-8bit"-encoded MIME message.
+      A mail relay may respond "521 <domain> does not accept mail" to a given
+      RCPT TO if the host in question does not accept mail. Hosts may also use
+      521 as the initial greeting to signify that they don't accept mail.
 
-  1652: SMTP Service Extension for 8bit-MIMEtransport
+***** 1870: SMTP Service Extension for Message Size Declaration
 
-    The ESMTP 8BITMIME extension adds the parameter
-    "BODY={7BIT,8BITMIME}" to the MAIL FROM command. Conforming
-    implementaions must (a) handle 8-bit MIME payload and (b)
-    downgrade the payload to base64 or quoted-printable before
-    relaying it to an MX without 8BITMIME support.
+      The ESMTP SIZE extension add the parameter "SIZE=n" to MAIL FROM, which
+      allows the server to reject the message if it is too large. The declared
+      size isn't necessarily accurate, though; the RFC describes that number as
+      "the client's estimate". The actual size of the payload is known only
+      after <CRLF><DOT><CRLF>.
 
-    Does this mean that a relay can upgrade payload to 8-bit too?
+***** 1893: Enhanced Mail System Status Codes
 
-    Required for ESMTP CHUNKING.
+      See [[*2034 SMTP Service Extension for Returning Enhanced Error Codes][EMTP ENHANCEDSTATUSCODES]].
 
-  1846: SMTP 521 Reply Code
+***** 2033: Local Mail Transfer Protocol
 
-    A mail relay may respond "521 <domain> does not accept mail" to
-    a given RCPT TO if the host in question does not accept mail.
-    Hosts may also use 521 as the initial greeting to signify that
-    they don't accept mail.
+      LMTP is a variation of ESMTP that starts with LHLO instead EHLO. It's
+      almost identical to ESMTP, but the server response to DATA has one line
+      per successful RCPT TO -- every recipient gets a separate response code.
+      This addition allows the server to operate without a mail spool. LMTP
+      must not be accepted on port 25 and the server must support ESMTP
+      PIPELINING and ESMTP ENHANCEDSTATUSCODES.
 
-  1870: SMTP Service Extension for Message Size Declaration
+      Contrary to what the RFC says, Postmaster totally speaks LMTP on port 25
+      and advertises that with the ESMTP X-LMTP extension.
 
-    The ESMTP SIZE extension add the parameter "SIZE=n" to MAIL
-    FROM, which allows the server to reject the message if it is
-    too large. The declared size isn't necessarily accurate,
-    though; the RFC describes that number as "the client's
-    estimate". The actual size of the payload is known only after
-    <CRLF><DOT><CRLF>.
+***** 2034: SMTP Service Extension for Returning Enhanced Error Codes
 
-  1893: Enhanced Mail System Status Codes
-  2034: SMTP Service Extension for Returning Enhanced Error Codes
+      The ESMTP ENHANCEDSTATUSCODES extension allows MTAs to add lots of
+      unnecessary baggage to the SMTP dialogue.
 
-    The ESMTP ENHANCEDSTATUSCODES extension allows MTAs to add
-    lots of unnecessary baggage to the SMTP dialogue.
+      Required for [[*2033 Local Mail Transfer Protocol][LMTP]].
 
-    Required for LMTP.
+***** 2505: Anti-Spam Recommendations for SMTP MTAs
 
-  2033: Local Mail Transfer Protocol
+      MTAs are supposed to verify MAIL FROM addresses using DNS and other means
+      (sections 2.9 and 2.10).
 
-    LMTP is a variation of ESMTP that starts with LHLO instead
-    EHLO. It's almost identical to ESMTP, but the server response
-    to DATA has one line per successful RCPT TO -- every
-    recipient gets a separate response code. This addition allows
-    the server to operate without a mail spool. LMTP must not be
-    accepted on port 25 and the server must support ESMTP
-    PIPELINING and ESMTP ENHANCEDSTATUSCODES.
+***** 2554: SMTP Service Extension for Authentication
 
-    Contrary to what the RFC says, Postmaster totally speaks LMTP
-    on port 25 and advertises that with the ESMTP X-LMTP
-    extension.
+      The ESMTP AUTH extension specifies a challenge/response dialogue that's
+      supposed to authenticate the client to the server.
 
-  2505: Anti-Spam Recommendations for SMTP MTAs
+***** 2821: Simple Mail Transfer Protocol
 
-    MTAs are supposed to verify MAIL FROM addresses using DNS and
-    other means (sections 2.9 and 2.10).
+      Fully supported. The optional commands HELP, TURN, SEND, SOML, SAML,
+      EXPN. and VRFY are not implemented.
 
-  2554: SMTP Service Extension for Authentication
+***** 2920: SMTP Service Extension for Command Pipelining
 
-    The ESMTP AUTH extension specifies a challenge/response
-    dialogue that's supposed to authenticate the client to the
-    server.
+      The ESMTP PIPELINING extension allows MTAs to advertise that sending more
+      than one command at a time will not break their buffering.
 
-  2821: Simple Mail Transfer Protocol
+***** 3030: SMTP Service Extensions for Transmission of Large and Binary MIME Messages
 
-    Fully supported. The optional commands HELP, TURN, SEND,
-    SOML, SAML, EXPN. and VRFY are not implemented.
+      The ESMTP CHUNKING extension allows 8-bit MIME payload payload without
+      transfer encoding. It adds BDAT as an alternative to DATA. The BDAT
+      command has one parameter: the size of the payload chunk that follows it.
+      Additionally, the parameter LAST signifies that this chunk concludes the
+      transaction. The last chunk may have size 0. Multiple BDAT chunks may be
+      pipelined, because server must confirm intermediate chunks with 250,
+      nothing else.
 
-  2920: SMTP Service Extension for Command Pipelining
+      ESMTP BINARYMIME combines the CHUNKING and 8BITMIME extensions by adding
+      BODY=BINARYMIME to MAIL FROM. When specified, the transaction must occur
+      with BDATA, not DATA.
 
-    The ESMTP PIPELINING extension allows MTAs to advertise that
-    sending more than one command at a time will not break their
-    buffering.
+***** 3207: SMTP Service Extension for Secure SMTP over Transport Layer Security
 
-  3030: SMTP Service Extensions for Transmission of Large and
-        Binary MIME Messages
+      The ESMTP STARTTLS extension defines the STARTTLS command, which triggers
+      a TLS handshake. The SMTP session starts over with EHLO afterwards.
 
-    The ESMTP CHUNKING extension allows 8-bit MIME payload
-    payload without transfer encoding. It adds BDAT as an
-    alternative to DATA. The BDAT command has one parameter: the
-    size of the payload chunk that follows it. Additionally, the
-    parameter LAST signifies that this chunk concludes the
-    transaction. The last chunk may have size 0. Multiple BDAT
-    chunks may be pipelined, because server must confirm
-    intermediate chunks with 250, nothing else.
 
-    ESMTP BINARYMIME combines the CHUNKING and 8BITMIME extensions
-    by adding BODY=BINARYMIME to MAIL FROM. When specified, the
-    transaction must occur with BDATA, not DATA.
+*** Ignorance
 
-  3207: SMTP Service Extension for Secure SMTP over Transport
-        Layer Security
+***** 1845: SMTP Service Extension for Checkpoint/Restart
 
-    The ESMTP STARTTLS extension defines the STARTTLS command,
-    which triggers a TLS handshake. The SMTP session starts over
-    with EHLO afterwards.
+      The ESMTP CHECKPOINT extension allows the client to specify a transaction
+      identifier at MAIL FROM. If the connection aborts before DATA is
+      finished, an attempt to deliver a message with that very same id will
+      cause the server to respond with the number of bytes he has received (and
+      stored) earlier. Thus, the client doesn't have to re-transmit them.
 
-RFC Ignorance:
-==============
+***** 1985: SMTP Service Extension for Remote Message Queue Starting
 
-  1845: SMTP Service Extension for Checkpoint/Restart
+      Defines the ETRN command to trigger queue processing on the remote
+      server.
 
-    The ESMTP CHECKPOINT extension allows the client to specify a
-    transaction identifier at MAIL FROM. If the connection aborts
-    before DATA is finished, an attempt to deliver a message with
-    that very same id will cause the server to respond with the
-    number of bytes he has received (and stored) earlier. Thus, the
-    client doesn't have to re-transmit them.
+***** 2442: The Batch SMTP Media Type
 
-  1985: SMTP Service Extension for Remote Message Queue Starting
+      Defines a MIME type for representing batched SMTP transactions in e-mail.
 
-    Defines the ETRN command to trigger queue processing on the
-    remote server.
+***** 2645: On-Demand Mail Relay (ODMR) SMTP with Dynamic IP Addresses
 
-  2442: The Batch SMTP Media Type
+      Defines the ATRN command, which does the same thing as TURN only it
+      requires AUTH authentication to be performed before it can be issued.
 
-    Defines a MIME type for representing batched SMTP
-    transactions in e-mail.
+***** 2852: Deliver By SMTP Service Extension
 
-  2645: On-Demand Mail Relay (ODMR) SMTP with Dynamic IP Addresses
+      The ESMTP DELIVERBY extension allows clients to specify that the payload
+      should be delivered within a certain time period and what should be done
+      if that isn't possible.
 
-    Defines the ATRN command, which does the same thing as TURN
-    only it requires AUTH authentication to be performed before it
-    can be issued.
+***** 3461: SMTP Service Extension for Delivery Status Notifications (DSNs)
 
-  2852: Deliver By SMTP Service Extension
+      The ESMTP DSN extension provides means for the client to specify
+      reporting and tracing behavior for a message's relays and final server.
+      RCPT TO has an additional NOTIFY and ORCPT parameters, MAIL FROM gets
+      additional RET and ENVID parameters. There are lots of other insane
+      additions.
 
-    The ESMTP DELIVERBY extension allows clients to specify that
-    the payload should be delivered within a certain time period
-    and what should be done if that isn't possible.
+***** 3865: A No Soliciting SMTP Service Extension
 
-  3461: SMTP Service Extension for Delivery Status Notifications (DSNs)
+      The ESMTP NO-SOLICITING extension allows payload to be classified before
+      transfer. The client adds "SOLICIT=type1:type2:...:typen" to MAIL FROM to
+      allow the server to reject the message based on that classification.
+      "spam" is an obvious category, but the RFC doesn't define anything,
+      instead the RFC2822 extension header "Solicitation:" can be used to
+      signal these categories during injection.
 
-    The ESMTP DSN extension provides means for the client to
-    specify reporting and tracing behavior for a message's relays
-    and final server. RCPT TO has an additional NOTIFY and ORCPT
-    parameters, MAIL FROM gets additional RET and ENVID
-    parameters. There are lots of other insane additions.
+***** 3885: SMTP Service Extension for Message Tracking
 
-  3865: A No Soliciting SMTP Service Extension
+      The ESMTP MTRK extension adds support for message tracking (apparently
+      using hash MAC algorithms). It requires that most of ESMTP DSN and
+      DELIVERBY is implemented, so it's probably not useful.
 
-    The ESMTP NO-SOLICITING extension allows payload to be
-    classified before transfer. The client adds
-    "SOLICIT=type1:type2:...:typen" to MAIL FROM to allow the
-    server to reject the message based on that classification.
-    "spam" is an obvious category, but the RFC doesn't define
-    anything, instead the RFC2822 extension header
-    "Solicitation:" can be used to signal these categories during
-    injection.
+***** 4141: SMTP and MIME Extensions for Content Conversion
 
-  3885: SMTP Service Extension for Message Tracking
+      E-mail relays can use the ESMTP CONNEG extension to ask the recipient MX
+      whether it's okay to re-encode the payload before relaying. A mail server
+      could, for instance, re-encode an attached WAV audio file to MP3 before
+      delivering the e-mail. If the recipient MX is okay with that, that is.
+      This extension is supposed to conserve bandwidth.
 
-    The ESMTP MTRK extension adds support for message tracking
-    (apparently using hash MAC algorithms). It requires that most
-    of ESMTP DSN and DELIVERBY is implemented, so it's probably
-    not useful.
+***** 4405: SMTP Service Extension for Indicating the Responsible Submitter of an E-Mail Message
 
-  4141: SMTP and MIME Extensions for Content Conversion
+      The SMTP SUBMITTER extensions lifts the "purported responsible address"
+      from the RFC2822 payload into the SMTP dialogue. Thus, a mail server can
+      reject the transaction based on this information prior to accepting DATA.
 
-    E-mail relays can use the ESMTP CONNEG extension to ask the
-    recipient MX whether it's okay to re-encode the payload
-    before relaying. A mail server could, for instance, re-encode
-    an attached WAV audio file to MP3 before delivering the
-    e-mail. If the recipient MX is okay with that, that is. This
-    extension is supposed to conserve bandwidth.
 
-  4405: SMTP Service Extension for Indicating the Responsible
-        Submitter of an E-Mail Message
 
-    The SMTP SUBMITTER extensions lifts the "purported
-    responsible address" from the RFC2822 payload into the SMTP
-    dialogue. Thus, a mail server can reject the transaction
-    based on this information prior to accepting DATA.
