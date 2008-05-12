@@ -702,7 +702,7 @@ namespace postmaster
       typedef boost::function1<void, char *>            input_handler;
       typedef boost::function1<void, char const *>      output_handler;
 
-      basic_socket(scheduler & io, scheduler::socket_id fd) : _io(io), _sock(fd)
+      basic_socket(scheduler & io, socket_id fd) : _io(io), _sock(fd)
       {
         BOOST_ASSERT(fd >= 0);
         int const rc( fcntl(fd, F_GETFL, 0) );
@@ -785,7 +785,7 @@ namespace postmaster
         }
         f(sock, &addr, len);
       }
-      if (errno != EWOULDBLOCK && errno == EAGAIN)
+      if (errno != EWOULDBLOCK && errno != EAGAIN)
         throw system_error(errno, "failed to accept() new connection");
     }
 
