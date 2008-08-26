@@ -1,0 +1,7 @@
+#! /bin/sh
+
+echo "line="
+echo "STATE=env"
+echo ""
+echo "250 OK"
+
