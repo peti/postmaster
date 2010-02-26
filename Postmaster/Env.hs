@@ -13,7 +13,6 @@
 module Postmaster.Env where
 
 import Control.Monad.State
-import Control.Monad.Reader
 import Data.Char
 import Data.Dynamic
 import Data.ByteString.Char8 ( ByteString, pack )

@@ -57,10 +57,10 @@ handlePayload spool _ StartData =
        assert (p' == Nothing) $
        assert (h' == Nothing) $
        assert (c' == nullPtr) $
-       Postmaster.Base.bracketOnError
+       bracketOnError
          (openBinaryFile path WriteMode)
          (hClose)
-         (\h -> Postmaster.Base.bracketOnError ctxCreate ctxDestroy $ \ctx -> do
+         (\h -> bracketOnError ctxCreate ctxDestroy $ \ctx -> do
             hSetBuffering h NoBuffering
             when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
             md <- toMDEngine SHA1
@@ -103,12 +103,12 @@ feeder buf@(Buf _ ptr n) = do
   buf' <- liftIO . withMVar st $ \(S _ (Just h) ctx@(DST c)) ->
     assert (c /= nullPtr) $ do
       hPutBuf h ptr i'
-      execStateT (update' (ptr, i')) ctx
+      _ <- execStateT (update' (ptr, i')) ctx
       flush i buf
   if not eod then return (Nothing, buf') else do
     r <- trigger Deliver
-    trigger ResetState          -- TODO: this doesn't really
-    setSessionState HaveHelo    --       belong here
+    _ <- trigger ResetState          -- TODO: this doesn't really
+    setSessionState HaveHelo         --       belong here
     return (Just r, buf')
 
 clearState :: Smtpd ()
@@ -116,7 +116,7 @@ clearState = do
   st <- getState
   liftIO . modifyMVar_ st $ \(S path h (DST ctx)) -> do
     let clean Nothing  _ = return ()
-        clean (Just x) f = try (f x) >> return ()
+        clean (Just x) f = (try (f x) :: IO (Either SomeException ())) >> return ()
     clean h hClose
     clean path removeFile
     when (ctx /= nullPtr) (ctxDestroy ctx)

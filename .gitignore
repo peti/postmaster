@@ -1,11 +1,3 @@
-/COPYING
-/Setup
-/Setup.hi
-/Setup.lhs
-/Setup.o
-/_darcs/*
+# ignore cabal build files
+
 /dist
-/docs
-/index.html
-/notfound.html
-/postmaster-*.tar.gz

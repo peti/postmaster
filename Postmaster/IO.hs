@@ -12,7 +12,6 @@
 module Postmaster.IO where
 
 import Data.List
-import Data.Maybe
 import Data.Dynamic             ( Typeable )
 import Control.Concurrent       ( forkIO )
 import Control.Exception
@@ -59,14 +58,14 @@ type Timeout = Int
 -- |If there is space, read and append more octets; then
 -- return the modified buffer. In case of 'hIsEOF',
 -- 'Nothing' is returned. If the buffer is full already,
--- 'throwDyn' a 'BufferOverflow' exception. When the timeout
+-- 'throw' a 'BufferOverflow' exception. When the timeout
 -- exceeds, 'ReadTimeout' is thrown.
 
 slurp :: Timeout -> ReadHandle -> Buffer -> IO (Maybe Buffer)
 slurp to h b@(Buf cap ptr len) = do
-  when (cap <= len) (throwDyn (BufferOverflow h b))
+  when (cap <= len) (throw (BufferOverflow h b))
   timeout to (handleEOF wrap) >>=
-    maybe (throwDyn (ReadTimeout to h b)) return
+    maybe (throw (ReadTimeout to h b)) return
   where
   wrap = do let ptr' = ptr `plusPtr` (fromIntegral len)
                 n    = cap - len
@@ -87,13 +86,13 @@ type BlockHandler st = Buffer -> st -> IO (Buffer, st)
 -- |Our main I\/O driver.
 
 runLoopNB
-  :: (st -> Timeout)            -- ^ user state provides timeout
-  -> (Exception -> st -> IO st) -- ^ user provides I\/O error handler
-  -> ReadHandle                 -- ^ the input source
-  -> Capacity                   -- ^ I\/O buffer size
-  -> BlockHandler st            -- ^ callback
-  -> st                         -- ^ initial callback state
-  -> IO st                      -- ^ return final callback state
+  :: (st -> Timeout)                -- ^ user state provides timeout
+  -> (SomeException -> st -> IO st) -- ^ user provides I\/O error handler
+  -> ReadHandle                     -- ^ the input source
+  -> Capacity                       -- ^ I\/O buffer size
+  -> BlockHandler st                -- ^ callback
+  -> st                             -- ^ initial callback state
+  -> IO st                          -- ^ return final callback state
 runLoopNB mkTO errH hIn cap f initST = withBuffer cap (flip ioloop $ initST)
   where
   ioloop buf st = buf `seq` st `seq`
@@ -129,11 +128,14 @@ handleStream f buf@(Buf _ ptr len) st = do
 data BufferOverflow = BufferOverflow ReadHandle Buffer
                     deriving (Show, Typeable)
 
+instance Exception BufferOverflow where
+
 -- |Thrown by 'slurp'.
 
 data ReadTimeout    = ReadTimeout Timeout ReadHandle Buffer
                     deriving (Show, Typeable)
 
+instance Exception ReadTimeout where
 
 -- * Internal Helper Functions
 
@@ -142,7 +144,7 @@ data ReadTimeout    = ReadTimeout Timeout ReadHandle Buffer
 
 handleEOF :: IO a -> IO (Maybe a)
 handleEOF f =
-  catchJust ioErrors
+  catchJust fromException
     (fmap Just f)
     (\e -> if isEOFError e then return Nothing else ioError e)
 
@@ -183,7 +185,7 @@ listener p h = bracket (listenOn p) (sClose) (acceptor h)
 
 acceptor :: SocketHandler -> Socket -> IO ()
 acceptor h ls = do
-  Postmaster.Base.bracketOnError
+  bracketOnError
     (accept ls)
     (sClose . fst)
     (\peer@(s,_) -> fork $ h peer `finally` sClose s)
@@ -206,6 +208,8 @@ handleLazy m f (s,sa) =
 data WriteTimeout = WriteTimeout Timeout
                   deriving (Typeable, Show)
 
+instance Exception WriteTimeout where
+
 setReadTimeout :: Timeout -> Smtpd ()
 setReadTimeout = local . setVar (mkVar "ReadTimeout")
 
@@ -221,7 +225,7 @@ getWriteTimeout = local $ getVarDef (mkVar "WriteTimeout") (90 * 1000000)
 safeWrite :: IO a -> Smtpd a
 safeWrite f = do
   to <- getWriteTimeout
-  liftIO $ timeout to f >>= maybe (throwDyn (WriteTimeout to)) return
+  liftIO $ timeout to f >>= maybe (throw (WriteTimeout to)) return
 
 safeReply :: WriteHandle -> SmtpReply -> Smtpd ()
 safeReply hOut r = safeWrite (hPutStr hOut (show r))

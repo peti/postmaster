@@ -36,12 +36,10 @@ the details.
 
 > module Main where
 >
-> import System.IO
 > import System.Time
 > import System.Posix.User
 > import Network.Socket ( SockAddr(..) )
 > import Data.Char
-> import Data.List
 > import Postmaster hiding ( main )
 
 > ioBufferSize :: Capacity

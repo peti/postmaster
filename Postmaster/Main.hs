@@ -154,8 +154,8 @@ smtpdMain cap theEnv hIn hOut initST = do
 
 main' :: Capacity -> PortID -> EventT -> IO ()
 main' cap port eventT = do
-  installHandler sigPIPE Ignore Nothing
-  installHandler sigCHLD (Catch (return ())) Nothing
+  _ <- installHandler sigPIPE Ignore Nothing
+  _ <- installHandler sigCHLD (Catch (return ())) Nothing
   whoami <- getHostName
   withSocketsDo $
     withSyslog "postmaster" [PID, PERROR] MAIL $

@@ -10,7 +10,6 @@
 
 module Postmaster.FSM.PeerHelo where
 
-import Control.Monad
 import Network ( HostName )
 import Postmaster.Base
 import Text.ParserCombinators.Parsec.Rfc2821

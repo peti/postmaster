@@ -98,7 +98,7 @@ event (SeeksHelp _) =
   say 5 0 4 "I don't implement HELP with parameters."
 
 event (SayHelo _) = do
-  trigger ResetState
+  _ <- trigger ResetState
   whoami <- myHeloName
   say 2 5 0 (showString whoami " Postmaster; pleased to meet you.")
 
@@ -107,7 +107,7 @@ event (SayHeloAgain peer) = event (SayHelo peer)
 event (SayEhloAgain peer) = event (SayHelo peer)
 
 event (SetMailFrom mbox) = do
-  trigger ResetState
+  _ <- trigger ResetState
   say 2 5 0 (mbox `shows` " ... sender ok")
 
 event (AddRcptTo mbox) =

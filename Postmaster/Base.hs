@@ -17,7 +17,6 @@ module Postmaster.Base
 
 import Prelude hiding ( catch )
 import Foreign
-import System.IO
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
 import Control.Monad.State
@@ -135,7 +134,7 @@ data LogEvent
   | AcceptConn SockAddr
   | DropConn SockAddr
   | UserShutdown
-  | CaughtException Exception
+  | CaughtException SomeException
   | CaughtIOError IOException
   | StartEventHandler String Event
   | EventHandlerResult String Event SmtpCode
@@ -162,47 +161,3 @@ fallback f g = do
   tell w
   put st'
   return r
-
--- |Like bracket, but only performs the final action if
--- there was an exception raised by the in-between
--- computation. GHC 6.5 provides this function in
--- "Control.Exception".
-
-bracketOnError
-	:: IO a		-- ^ computation to run first (\"acquire resource\")
-	-> (a -> IO b)  -- ^ computation to run last (\"release resource\")
-	-> (a -> IO c)	-- ^ computation to run in-between
-	-> IO c		-- returns the value from the in-between computation
-bracketOnError before after thing =
-  block (do
-    a <- before
-    catch
-	(unblock (thing a))
-	(\e -> do { after a; throw e })
- )
-
--- * Resource Management
-
--- |Convert 'bracket'-style resource management to
--- allocate\/free style. We need this, because we have to
--- acquire resources that leave the scope in which they were
--- allocated. Yeah, callback-driven I\/O does that to
--- functional programs. Anyway, the resource will be /gone/
--- once you empty the 'MVar' (or when it falls out of
--- scope). So use only 'withMVar' and friends to access the
--- value.
-
-acquire :: ((a -> IO b) -> IO b) -> IO (MVar a)
-acquire f = do
-  sync <- newEmptyMVar
-  let hold r = do putMVar sync r
-                  yield
-                  putMVar sync r
-                  return undefined
-  forkIO (f hold >> return ())
-  return sync
-
--- |Let go of a resource allocated with 'acquire'.
-
-release :: MVar a -> IO ()
-release a = takeMVar a >> yield >> return ()

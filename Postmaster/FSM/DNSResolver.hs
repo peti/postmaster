@@ -15,7 +15,6 @@ import Control.Monad.RWS hiding ( local )
 import ADNS
 import Data.Typeable
 import Postmaster.Base
-import Control.Monad.Trans
 
 newtype DNSR = DNSR Resolver
              deriving (Typeable)
