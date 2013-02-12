@@ -1,8 +1,12 @@
 # postmaster/test/Jamfile.v2
 
-test-suite postmaster_tests
-  : [ run strong-typedef.cpp     /boost//unit_test_framework ]
-    [ run cf-file.cpp            /boost//unit_test_framework ]
-#   [ run route-parser.cpp       /boost//unit_test_framework ]
-#   [ run pattern-matching.cpp   /boost//unit_test_framework ]
+import testing ;
+
+project
+  : requirements <include>../src
   ;
+
+unit-test strong-typedef        : strong-typedef.cpp   /boost//unit_test_framework ;
+unit-test cf-file               : cf-file.cpp          /boost//unit_test_framework ;
+unit-test route-parser          : route-parser.cpp     /boost//unit_test_framework ;
+unit-test pattern-matching      : pattern-matching.cpp /boost//unit_test_framework ;

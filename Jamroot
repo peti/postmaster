@@ -1,0 +1,10 @@
+# postmaster/Jamroot
+
+use-project /boost : [ modules.peek : BOOST_ROOT ] ;
+
+project postmaster
+  : requirements <threading>single <define>BOOST_DISABLE_THREADS
+  ;
+
+build-project src ;
+build-project test ;
