@@ -6,8 +6,8 @@
 #  define BOOST_SPIRIT_DEBUG_OUT std::cerr
 #endif
 
-#include <boost/spirit.hpp>
-#include <boost/spirit/utility/chset.hpp>
+#include <boost/spirit/include/classic.hpp>
+#include <boost/spirit/include/classic_chset.hpp>
 #include <boost/spirit/phoenix/primitives.hpp>
 #include <boost/spirit/phoenix/operators.hpp>
 #include <boost/spirit/phoenix/binders.hpp>
