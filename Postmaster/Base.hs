@@ -15,7 +15,6 @@ module Postmaster.Base
   )
   where
 
-import Prelude hiding ( catch )
 import Foreign
 import Network.Socket hiding ( listen, shutdown )
 import Control.Exception
@@ -155,7 +154,7 @@ fallback
 fallback f g = do
   cfg <- ask
   st <- get
-  (r, st', w) <- liftIO $ catch
+  (r, st', w) <- liftIO $ Control.Exception.catch
       (runRWST f cfg st)
       (\e -> runRWST (yell (CaughtException e) >> g) cfg st)
   tell w
