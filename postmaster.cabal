@@ -6,6 +6,7 @@ License-File:           COPYING
 Author:                 Peter Simons <simons@cryp.to>
 Maintainer:             Peter Simons <simons@cryp.to>
 Homepage:               http://github.com/peti/postmaster
+Bug-Reports:            http://github.com/peti/postmaster/issues
 Category:               Network
 Synopsis:               Postmaster ESMTP Server
 Description:            Postmaster implements an ESMTP server. Given a configuration,
