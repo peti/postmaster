@@ -5,7 +5,7 @@ License:                GPL
 License-File:           COPYING
 Author:                 Peter Simons <simons@cryp.to>
 Maintainer:             Peter Simons <simons@cryp.to>
-Homepage:               http://gitorious.org/postmaster
+Homepage:               http://github.com/peti/postmaster
 Category:               Network
 Synopsis:               Postmaster ESMTP Server
 Description:            Postmaster implements an ESMTP server. Given a configuration,
@@ -40,7 +40,7 @@ Extra-Source-Files:     Postmaster/Base.hs
 
 Source-Repository head
   Type:                 git
-  Location:             git://gitorious.org/postmaster/mainline.git
+  Location:             git://github.com/peti/postmaster.git
 
 Executable postmaster
   Main-Is:              tutorial.lhs
