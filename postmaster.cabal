@@ -46,6 +46,6 @@ Executable postmaster
   Main-Is:              tutorial.lhs
   GHC-Options:          -Wall -threaded
   Extra-Libraries:      adns crypto
-  Build-Depends:        base >=3 && <5, haskell98, directory, mtl, network, unix, parsec,
+  Build-Depends:        base >=3 && <5, directory, mtl, network, unix, parsec,
                         containers, bytestring, old-time, hsyslog, hsdns, hsemail,
                         hopenssl
