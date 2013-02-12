@@ -58,14 +58,14 @@ smtpd :: Buffer -> Smtpd ([SmtpReply], Buffer)
 smtpd buf@(Buf _  _  0) = return ([], buf)
 smtpd buf@(Buf _ ptr n) = do
   sst <- getSessionState
-  if (sst == HaveData)
+  if sst == HaveData
       then do (r, buf') <- feed buf
               return (maybeToList r, buf')
       else do xs <- liftIO (peekArray (fromIntegral n) ptr)
               let xs'  = map (toEnum . fromEnum) xs
                   ls'  = splitList "\r\n" xs'
                   ls   = reverse . tail $ reverse ls'
-                  rest = head $ reverse ls'
+                  rest = last ls'
                   i    = length xs - length rest
               rs <- mapM handleDialog ls
               buf' <- liftIO $ flush (fromIntegral i) buf
