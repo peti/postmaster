@@ -1,4 +1,6 @@
 language: cpp
 compiler:
   - gcc
+before_install:
+ - sudo apt-get install --allow-unauthenticated -qq libboost-dev
 script: bjam
