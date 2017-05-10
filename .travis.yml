@@ -91,6 +91,12 @@ install:
  - cabal install --only-dependencies --enable-tests --enable-benchmarks --dry -v > installplan.txt
  - sed -i -e '1,/^Resolving /d' installplan.txt; cat installplan.txt
 
+# install ADNS library into our home: https://github.com/travis-ci/apt-package-whitelist/issues/1166
+ - curl http://www.chiark.greenend.org.uk/~ian/adns/ftp/adns-1.5.1.tar.gz | tar xfz -
+ - (cd adns-1.5.1 && ./configure --prefix=$HOME/.local && make && make install)
+ - echo "extra-include-dirs:" "$HOME/.local/include" >>${HOME}/.cabal/config
+ - echo "extra-lib-dirs:" "$HOME/.local/lib" >>${HOME}/.cabal/config
+
 # check whether current requested install-plan matches cached package-db snapshot
  - if diff -u $HOME/.cabsnap/installplan.txt installplan.txt;
    then
