@@ -13,7 +13,7 @@ module Postmaster.FSM.HeloName where
 import Control.Monad
 import Network ( HostName )
 import Postmaster.Base
-import Text.ParserCombinators.Parsec.Rfc2821
+import Text.Parsec.Rfc2821
 
 -- |Local Variable: @HELONAME :: 'HostName'@
 

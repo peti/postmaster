@@ -23,7 +23,7 @@ import Postmaster.FSM.EventHandler
 import Postmaster.FSM.SessionState
 import Postmaster.FSM.DataHandler
 import Postmaster.FSM.MailID
-import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
+import Text.Parsec.Rfc2821 hiding ( path )
 import OpenSSL.Digest
 import Data.Typeable
 

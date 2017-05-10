@@ -12,7 +12,7 @@
 module Postmaster.FSM.MailFrom where
 
 import Postmaster.Base
-import Text.ParserCombinators.Parsec.Rfc2821
+import Text.Parsec.Rfc2821
 import Data.Typeable
 
 newtype SmtpMailbox = SMB Mailbox

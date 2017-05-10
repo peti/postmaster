@@ -12,7 +12,7 @@ module Postmaster.FSM.PeerHelo where
 
 import Network ( HostName )
 import Postmaster.Base
-import Text.ParserCombinators.Parsec.Rfc2821
+import Text.Parsec.Rfc2821
 
 -- |Local Variable: @PEERHELO :: 'HostName'@
 

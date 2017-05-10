@@ -21,7 +21,7 @@ import System.IO.Error
 import System.Timeout
 import Network                  ( listenOn, PortID(..) )
 import Network.Socket
-import Text.ParserCombinators.Parsec.Rfc2821
+import Text.Parsec.Rfc2821
 import Foreign
 import Postmaster.Base
 
@@ -177,7 +177,7 @@ type SocketHandler = (Socket,SockAddr) -> IO ()
 -- incoming connection.
 
 listener :: PortID -> SocketHandler -> IO ()
-listener p h = bracket (listenOn p) (sClose) (acceptor h)
+listener p h = bracket (listenOn p) (close) (acceptor h)
 
 -- |Given a listening socket, this function will loop
 -- forever 'accept'ing incoming connections. For each
@@ -187,8 +187,8 @@ acceptor :: SocketHandler -> Socket -> IO ()
 acceptor h ls = do
   bracketOnError
     (accept ls)
-    (sClose . fst)
-    (\peer@(s,_) -> fork $ h peer `finally` sClose s)
+    (close . fst)
+    (\peer@(s,_) -> fork $ h peer `finally` close s)
   acceptor h ls
   where
   fork f = forkIO f >> return ()

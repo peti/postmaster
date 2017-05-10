@@ -21,7 +21,7 @@ module Postmaster
   , module Data.Typeable
   , module Network
   , module ADNS
-  , module Text.ParserCombinators.Parsec.Rfc2821
+  , module Text.Parsec.Rfc2821
   , module System.Posix.Syslog
   )
   where
@@ -30,15 +30,9 @@ import Network ( PortID(..) )
 import Control.Monad.RWS hiding ( local )
 import ADNS hiding ( Debug, queryMX, queryA, queryPTR )
 import Data.Typeable
-import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
+import Text.Parsec.Rfc2821 hiding ( path )
 import System.Posix.Syslog
 import Postmaster.Base
 import Postmaster.FSM
 import Postmaster.IO
 import Postmaster.Main
-
--- ----- Configure Emacs -----
---
--- Local Variables: ***
--- haskell-program-name: "ghci -ladns -lcrypto" ***
--- End: ***

@@ -1,5 +1,5 @@
 Name:                   postmaster
-Version:                0.3
+Version:                0.3.1
 Copyright:              Peter Simons
 License:                GPL
 License-File:           COPYING
@@ -48,5 +48,5 @@ Executable postmaster
   GHC-Options:          -Wall -threaded
   Extra-Libraries:      adns crypto
   Build-Depends:        base >=3 && <5, directory, mtl, network, unix, parsec,
-                        containers, bytestring, old-time, hsyslog, hsdns, hsemail,
+                        containers, bytestring, old-time, hsyslog >= 4, hsdns >= 1, hsemail >= 2,
                         hopenssl

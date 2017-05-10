@@ -22,7 +22,7 @@ import Control.Monad.State
 import Control.Monad.RWS hiding ( local )
 import Control.Concurrent
 import Data.Typeable
-import Text.ParserCombinators.Parsec.Rfc2821 hiding ( path )
+import Text.Parsec.Rfc2821 hiding ( path )
 import Postmaster.Env
 
 -- * The @Smtpd@ Monad

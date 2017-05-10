@@ -13,7 +13,7 @@
 module Postmaster.FSM.Announce where
 
 import Postmaster.Base
-import Text.ParserCombinators.Parsec.Rfc2821
+import Text.Parsec.Rfc2821
 
 -- |Append the given ESMTP keyword to the reply produced
 -- during 'SayEhlo'.
