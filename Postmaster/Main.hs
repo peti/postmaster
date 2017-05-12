@@ -12,19 +12,6 @@
 
 module Postmaster.Main where
 
-import Prelude hiding ( catch )
-import Data.Maybe
-import Data.ByteString.Char8 ( pack )
-import Control.Concurrent.MVar
-import Control.Monad.RWS hiding ( local )
-import Control.Monad.State
-import System.IO
-import System.Posix.Signals
-import Network ( PortID(..) )
-import Network.Socket
-import Network.BSD ( getHostName )
-import ADNS
-import Foreign
 import Postmaster.Base
 import Postmaster.FSM
 import Postmaster.FSM.DNSResolver  ( setDNSResolver  )
@@ -32,8 +19,21 @@ import Postmaster.FSM.EventHandler ( setEventHandler )
 import Postmaster.FSM.PeerAddr     ( setPeerAddr     )
 import Postmaster.FSM.SessionState ( setSessionState )
 import Postmaster.IO
-import Text.Parsec.Rfc2821
+
+import ADNS
+import Control.Concurrent.MVar
+import Control.Monad.RWS hiding ( local )
+import Control.Monad.State
+import Data.Maybe
+import Foreign.C.String
+import Foreign.Marshal.Array
+import Network ( PortID(..) )
+import Network.BSD ( getHostName )
+import Network.Socket
+import System.IO
+import System.Posix.Signals
 import System.Posix.Syslog
+import Text.Parsec.Rfc2821
 
 -- * Speaking ESMTP
 
@@ -159,7 +159,7 @@ main' cap port eventT = do
   _ <- installHandler sigCHLD (Catch (return ())) Nothing
   whoami <- getHostName
   withSocketsDo $
-    -- TODO: withSyslog "postmaster" [PID, PERROR] MAIL $
+    withSyslog "postmaster" [LogPID] Mail $
       initResolver [NoErrPrint,NoServerWarn] $ \dns ->
         withGlobalEnv whoami dns eventT $
           listener port . smtpdServer cap
@@ -184,5 +184,6 @@ withLogger logger f theEnv = do
 -- |Our default logging back-end.
 
 syslogger :: Logger
-syslogger (LogMsg sid _ e) = syslogUnsafe MAIL Info $ pack $
-  showString "SID " . shows sid . (':':) . (' ':) $ show e
+syslogger (LogMsg sid _ e) =
+  withCStringLen (showString "SID " . shows sid . (':':) . (' ':) $ show e) $
+    syslog Nothing Info
