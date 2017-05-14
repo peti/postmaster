@@ -46,7 +46,6 @@ Source-Repository head
 Executable postmaster
   Main-Is:              tutorial.lhs
   GHC-Options:          -Wall -threaded
-  Extra-Libraries:      adns crypto
   Build-Depends:        base >=3 && <5, directory, mtl, network, unix, parsec,
                         containers, bytestring, old-time, hsyslog >= 5, hsdns >= 1, hsemail >= 2,
                         hopenssl
