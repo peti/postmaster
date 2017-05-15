@@ -24,10 +24,10 @@ import Postmaster.FSM.SessionState
 import Postmaster.FSM.DataHandler
 import Postmaster.FSM.MailID
 import Text.Parsec.Rfc2821 hiding ( path )
-import OpenSSL.Digest
+import OpenSSL.EVP.Digest
 import Data.Typeable
 
-data Spooler = S (Maybe FilePath) (Maybe WriteHandle) DigestState
+data Spooler = S (Maybe FilePath) (Maybe WriteHandle) (Ptr OpaqueDigestContext)
              deriving (Typeable)
 
 spoolerState :: SmtpdVariable
@@ -45,7 +45,7 @@ setState st = spoolerState (`setVar` st)
 handlePayload :: FilePath -> EventT
 
 handlePayload _ f Greeting = do
-  liftIO (newMVar (S Nothing Nothing (DST nullPtr))) >>= setState
+  liftIO (newMVar (S Nothing Nothing nullPtr)) >>= setState
   setDataHandler feeder
   f Greeting
 
@@ -53,21 +53,20 @@ handlePayload spool _ StartData =
   do st <- getState
      mid <- getMailID
      let path = spool ++ "/temp." ++ show mid
-     liftIO . modifyMVar_ st $ \(S p' h' (DST c')) ->
+     liftIO . modifyMVar_ st $ \(S p' h' c') ->
        assert (p' == Nothing) $
        assert (h' == Nothing) $
        assert (c' == nullPtr) $
        bracketOnError
          (openBinaryFile path WriteMode)
          (hClose)
-         (\h -> bracketOnError ctxCreate ctxDestroy $ \ctx -> do
+         (\h -> bracketOnError _createContext _destroyContext $ \ctx -> do
             hSetBuffering h NoBuffering
             when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
-            md <- toMDEngine SHA1
-            when (md == nullPtr) (fail "can't initialize SHA1 digest engine")
-            rc <- digestInit ctx md
+            let DigestDescription md = digestByName "SHA1"
+            rc <- _initDigest ctx md nullPtr
             when (rc == 0) (fail "can't initialize SHA1 digest")
-            return (S (Just path) (Just h) (DST ctx)))
+            return (S (Just path) (Just h) ctx))
      say 3 5 4 "terminate data with <CRLF>.<CRLF>"
   `fallback`
      say 4 5 1 "requested action aborted: error in processing"
@@ -75,10 +74,15 @@ handlePayload spool _ StartData =
 handlePayload spool _ Deliver =
   do st <- getState
      sha1 <- liftIO $
-       modifyMVar st $ \(S (Just p) (Just h) ctx@(DST c)) ->
-         assert (c /= nullPtr) $ do
+       modifyMVar st $ \(S (Just p) (Just h) ctx) ->
+         assert (ctx /= nullPtr) $ do
            hClose h
-           sha1 <- fmap (>>= toHex) (evalStateT final ctx)
+           sha1 <- alloca $ \sizePtr ->
+             allocaArray maxDigestSize $ \mdPtr -> do
+               _finalizeDigest ctx mdPtr sizePtr
+               len <- peek sizePtr
+               md <- peekArray (fromIntegral len) mdPtr
+               return (md >>= toHex)
            let fname = spool ++ "/" ++ sha1
            renameFile p fname
            return (S Nothing Nothing ctx, sha1)
@@ -100,10 +104,10 @@ feeder buf@(Buf _ ptr n) = do
                    Just j -> (True, fromIntegral (j-3))
       i'       = fromIntegral i
   st <- getState
-  buf' <- liftIO . withMVar st $ \(S _ (Just h) ctx@(DST c)) ->
-    assert (c /= nullPtr) $ do
+  buf' <- liftIO . withMVar st $ \(S _ (Just h) ctx) ->
+    assert (ctx /= nullPtr) $ do
       hPutBuf h ptr i'
-      _ <- execStateT (update' (ptr, i')) ctx
+      _ <- _updateDigest ctx (castPtr ptr) (fromIntegral i')
       flush i buf
   if not eod then return (Nothing, buf') else do
     r <- trigger Deliver
@@ -114,10 +118,10 @@ feeder buf@(Buf _ ptr n) = do
 clearState :: Smtpd ()
 clearState = do
   st <- getState
-  liftIO . modifyMVar_ st $ \(S path h (DST ctx)) -> do
+  liftIO . modifyMVar_ st $ \(S path h ctx) -> do
     let clean Nothing  _ = return ()
         clean (Just x) f = (try (f x) :: IO (Either SomeException ())) >> return ()
     clean h hClose
     clean path removeFile
-    when (ctx /= nullPtr) (ctxDestroy ctx)
-    return (S Nothing Nothing (DST nullPtr))
+    when (ctx /= nullPtr) (_destroyContext ctx)
+    return (S Nothing Nothing nullPtr)
