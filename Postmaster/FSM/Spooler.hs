@@ -26,8 +26,9 @@ import Postmaster.FSM.MailID
 import Text.Parsec.Rfc2821 hiding ( path )
 import OpenSSL.EVP.Digest
 import Data.Typeable
+import OpenSSL.Util ( toHex )
 
-data Spooler = S (Maybe FilePath) (Maybe WriteHandle) (Ptr OpaqueDigestContext)
+data Spooler = S (Maybe FilePath) (Maybe WriteHandle) Context
              deriving (Typeable)
 
 spoolerState :: SmtpdVariable
@@ -45,7 +46,7 @@ setState st = spoolerState (`setVar` st)
 handlePayload :: FilePath -> EventT
 
 handlePayload _ f Greeting = do
-  liftIO (newMVar (S Nothing Nothing nullPtr)) >>= setState
+  liftIO (newMVar (S Nothing Nothing undefined)) >>= setState
   setDataHandler feeder
   f Greeting
 
@@ -53,19 +54,15 @@ handlePayload spool _ StartData =
   do st <- getState
      mid <- getMailID
      let path = spool ++ "/temp." ++ show mid
-     liftIO . modifyMVar_ st $ \(S p' h' c') ->
+     liftIO . modifyMVar_ st $ \(S p' h' _) ->
        assert (p' == Nothing) $
        assert (h' == Nothing) $
-       assert (c' == nullPtr) $
        bracketOnError
          (openBinaryFile path WriteMode)
          (hClose)
-         (\h -> bracketOnError _createContext _destroyContext $ \ctx -> do
+         (\h -> bracketOnError newContext freeContext $ \ctx -> do
             hSetBuffering h NoBuffering
-            when (ctx == nullPtr) (fail "can't initialize SHA1 digest context")
-            let DigestDescription md = digestByName "SHA1"
-            rc <- _initDigest ctx md nullPtr
-            when (rc == 0) (fail "can't initialize SHA1 digest")
+            initDigest (digestByName "SHA1") ctx
             return (S (Just path) (Just h) ctx))
      say 3 5 4 "terminate data with <CRLF>.<CRLF>"
   `fallback`
@@ -74,18 +71,16 @@ handlePayload spool _ StartData =
 handlePayload spool _ Deliver =
   do st <- getState
      sha1 <- liftIO $
-       modifyMVar st $ \(S (Just p) (Just h) ctx) ->
-         assert (ctx /= nullPtr) $ do
-           hClose h
-           sha1 <- alloca $ \sizePtr ->
-             allocaArray maxDigestSize $ \mdPtr -> do
-               _finalizeDigest ctx mdPtr sizePtr
-               len <- peek sizePtr
-               md <- peekArray (fromIntegral len) mdPtr
-               return (md >>= toHex)
-           let fname = spool ++ "/" ++ sha1
-           renameFile p fname
-           return (S Nothing Nothing ctx, sha1)
+       modifyMVar st $ \(S (Just p) (Just h) ctx) -> do
+         hClose h
+         sha1 <- let mdSize = digestSize (digestByName "SHA1") in
+           allocaArray mdSize $ \mdPtr -> do
+             finalizeDigest ctx mdPtr
+             md <- peekArray mdSize mdPtr
+             return (md >>= toHex)
+         let fname = spool ++ "/" ++ sha1
+         renameFile p fname
+         return (S Nothing Nothing ctx, sha1)
      say 2 5 0 (sha1 ++ " message accepted for delivery")
   `fallback`
      say 4 5 1 "requested action aborted: error in processing"
@@ -104,11 +99,10 @@ feeder buf@(Buf _ ptr n) = do
                    Just j -> (True, fromIntegral (j-3))
       i'       = fromIntegral i
   st <- getState
-  buf' <- liftIO . withMVar st $ \(S _ (Just h) ctx) ->
-    assert (ctx /= nullPtr) $ do
-      hPutBuf h ptr i'
-      _ <- _updateDigest ctx (castPtr ptr) (fromIntegral i')
-      flush i buf
+  buf' <- liftIO . withMVar st $ \(S _ (Just h) ctx) -> do
+    hPutBuf h ptr i'
+    _ <- updateDigest ctx ptr (fromIntegral i')
+    flush i buf
   if not eod then return (Nothing, buf') else do
     r <- trigger Deliver
     _ <- trigger ResetState          -- TODO: this doesn't really
@@ -123,5 +117,5 @@ clearState = do
         clean (Just x) f = (try (f x) :: IO (Either SomeException ())) >> return ()
     clean h hClose
     clean path removeFile
-    when (ctx /= nullPtr) (_destroyContext ctx)
-    return (S Nothing Nothing nullPtr)
+    freeContext ctx
+    return (S Nothing Nothing undefined)
