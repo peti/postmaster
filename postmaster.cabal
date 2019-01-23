@@ -53,7 +53,7 @@ executable postmaster
                , hsemail    >= 2
                , hsyslog    >= 5
                , mtl
-               , network
+               , network    < 3
                , old-time
                , parsec
                , unix
