@@ -1,5 +1,5 @@
 name:          postmaster
-version:       0.3.3
+version:       1.0.0
 synopsis:      Postmaster ESMTP Server
 description:   Postmaster implements an ESMTP server. Given a configuration, it starts up
                and listens for incoming SMTP connections, handles them, and pipes the
@@ -7,54 +7,38 @@ description:   Postmaster implements an ESMTP server. Given a configuration, it 
                good local mailer is Procmail. Beyond that, you can configure and modify
                every little step of the SMTP transaction. All the real work is done
                through call-back functions.
-license:       GPL
-license-file:  COPYING
+license:       AGPL-3
+license-file:  LICENSE
 copyright:     Peter Simons
-author:        Peter Simons <simons@cryp.to>
 maintainer:    Peter Simons <simons@cryp.to>
-tested-with:   GHC == 7.6.3, GHC == 7.8.4, GHC == 7.10.3, GHC == 8.0.2, GHC == 8.2.2,
-               GHC == 8.4.4, GHC == 8.6.3
+tested-with:   GHC == 8.6.5
 category:      Network
 homepage:      https://github.com/peti/postmaster
 bug-reports:   https://github.com/peti/postmaster/issues
 build-type:    Simple
-cabal-version: >= 1.6
+cabal-version: >= 1.10
 
 source-repository head
   type:     git
   location: git://github.com/peti/postmaster.git
 
+library
+  exposed:          False
+  exposed-modules:  Prelude
+  hs-source-dirs:   src/lib
+  build-depends:    base        == 4.12.*
+                  , bytestring  == 0.10.*
+                  , co-log-core == 0.2.*
+                  , hsyslog     == 5.0.*
+                  , lens        == 4.17.*
+                  , mtl         == 2.2.*
+                  , network     == 3.1.*
+                  , text        == 1.2.*
+  default-language: Haskell2010
+
 executable postmaster
-  main-is:       tutorial.lhs
-  other-modules: Postmaster
-                 Postmaster.Base
-                 Postmaster.Env
-                 Postmaster.FSM
-                 Postmaster.FSM.Announce
-                 Postmaster.FSM.DNSResolver
-                 Postmaster.FSM.DataHandler
-                 Postmaster.FSM.EhloPeer
-                 Postmaster.FSM.EventHandler
-                 Postmaster.FSM.HeloName
-                 Postmaster.FSM.MailFrom
-                 Postmaster.FSM.MailID
-                 Postmaster.FSM.PeerAddr
-                 Postmaster.FSM.PeerHelo
-                 Postmaster.FSM.SessionState
-                 Postmaster.FSM.Spooler
-                 Postmaster.IO
-                 Postmaster.Main
-  build-depends: base       >= 3 && < 5
-               , bytestring
-               , containers
-               , directory
-               , hopenssl   >= 2.2
-               , hsdns      >= 1
-               , hsemail    >= 2
-               , hsyslog    >= 5
-               , mtl
-               , network    < 3
-               , old-time
-               , parsec
-               , unix
-  ghc-options:   -Wall -threaded
+  main-is:          postmaster.hs
+  hs-source-dirs:   src/exe
+  build-depends:    base-noprelude, bytestring, co-log-core, hsyslog, network, postmaster
+  default-language: Haskell2010
+  ghc-options:      -threaded
