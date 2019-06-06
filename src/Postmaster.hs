@@ -1,9 +1,17 @@
-{-# LANGUAGE NoImplicitPrelude, PackageImports #-}
+{- |
+   Module:      Postmaster
+   Copyright:   (C) 2004-2019 Peter Simons
+   License:     GNU AFFERO GPL v3 or later
 
-module Prelude
-  ( module StdPrelude
-  , module Control.Lens
+   Maintainer:  simons@cryp.to
+   Stability:   experimental
+   Portability: non-portable
+ -}
+
+module Postmaster
+  ( module Control.Lens
   , module Control.Monad
+  , module Control.Exception
   , module Data.ByteString.Builder
   , module Control.Monad.IO.Class
   , module Control.Monad.Reader
@@ -12,8 +20,6 @@ module Prelude
   , module System.IO
   , module Data.String
   ) where
-
-import "base" Prelude as StdPrelude
 
 import Control.Lens
 import Control.Monad
@@ -24,3 +30,4 @@ import Data.ByteString.Builder ( Builder, string8 )
 import Data.Text ( Text )
 import System.IO
 import Data.String
+import Control.Exception

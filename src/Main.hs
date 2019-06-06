@@ -8,6 +8,8 @@
 
 module Main where
 
+import Postmaster
+
 import Colog.Core.Action
 import Colog.Core.Class
 import Colog.Core.Severity as Colog
@@ -59,23 +61,29 @@ main =
     withSyslog "postmaster" [] Mail $
       runReaderT (runPostmaster postmaster) ({- logToSyslog <> -} logToHandle stderr)
 
+
+
+
+listener :: (Maybe HostName, Maybe ServiceName) -> IO ()
+listener = undefined
+
+
 postmaster :: MonadLog env m => m ()
 postmaster =
   logDebug "postmaster starting up ..."
 
-makeListenSocket :: AddrInfo -> IO Socket
-makeListenSocket ai = do
-  sock <- socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
-  setSocketOption sock ReuseAddr 1
-  withFdSocket sock setCloseOnExecIfNeeded
-  bind sock (addrAddress ai)
-  listen sock 10
-  return sock
 
-resolveListenAddr :: ServiceName -> IO AddrInfo
-resolveListenAddr port = do
-   let hints = defaultHints { addrFlags = [AI_PASSIVE]
-                            , addrSocketType = Stream
-                            }
-   ai:_ <- getAddrInfo (Just hints) Nothing (Just port)
-   return ai
+resolveListenAddr :: Maybe HostName -> ServiceName -> IO [AddrInfo]
+resolveListenAddr host port = do
+   let hints = defaultHints { addrFlags = [AI_PASSIVE], addrSocketType = Stream }
+   getAddrInfo (Just hints) host (Just port)
+
+withListenSocket :: AddrInfo -> (Socket -> IO a) -> IO a
+withListenSocket ai socketHandler = bracket create close run
+  where
+    create   = socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
+    run sock = do setSocketOption sock ReuseAddr 1
+                  withFdSocket sock setCloseOnExecIfNeeded
+                  bind sock (addrAddress ai)
+                  listen sock 10
+                  socketHandler sock

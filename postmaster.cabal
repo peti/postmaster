@@ -22,10 +22,10 @@ source-repository head
   type:     git
   location: git://github.com/peti/postmaster.git
 
-library
-  exposed:          False
-  exposed-modules:  Prelude
-  hs-source-dirs:   src/lib
+executable postmaster
+  main-is:          Main.hs
+  other-modules:    Postmaster
+  hs-source-dirs:   src
   build-depends:    base        == 4.12.*
                   , bytestring  == 0.10.*
                   , co-log-core == 0.2.*
@@ -34,11 +34,5 @@ library
                   , mtl         == 2.2.*
                   , network     == 3.1.*
                   , text        == 1.2.*
-  default-language: Haskell2010
-
-executable postmaster
-  main-is:          postmaster.hs
-  hs-source-dirs:   src/exe
-  build-depends:    base-noprelude, bytestring, co-log-core, hsyslog, network, postmaster
   default-language: Haskell2010
   ghc-options:      -threaded
