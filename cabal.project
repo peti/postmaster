@@ -3,7 +3,3 @@ packages: .
 package postmaster
   ghc-options:   -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates
                  -Wredundant-constraints
-
-package hsdns
-  extra-include-dirs:	/nix/store/mg3pgcfv1v6xyqq5q80zx3xbga4zfjiz-adns-1.5.1/include
-  extra-lib-dirs:	/nix/store/mg3pgcfv1v6xyqq5q80zx3xbga4zfjiz-adns-1.5.1/lib
