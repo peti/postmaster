@@ -51,7 +51,7 @@ data IOState = SocketIO { _hinput :: Handle, _houtput :: Handle }
 makeClassy ''IOState
 
 newtype Postmaster a = Postmaster { runPostmaster :: ReaderT (LogAction Postmaster LogMsg) IO a }
-  deriving ( Applicative, Functor, Monad, MonadIO
+  deriving ( Applicative, Functor, Monad, MonadIO, MonadUnliftIO
            , MonadReader (LogAction Postmaster LogMsg)
            )
 
@@ -61,29 +61,34 @@ main =
     withSyslog "postmaster" [] Mail $
       runReaderT (runPostmaster postmaster) ({- logToSyslog <> -} logToHandle stderr)
 
-
-
-
-listener :: (Maybe HostName, Maybe ServiceName) -> IO ()
-listener = undefined
-
-
-postmaster :: MonadLog env m => m ()
-postmaster =
+postmaster :: (MonadUnliftIO m, MonadLog env m) => m ()
+postmaster = do
   logDebug "postmaster starting up ..."
+  listener (Just "localhost", "2525") (acceptor (const (return ())))
 
+-- * Network Utilities
 
-resolveListenAddr :: Maybe HostName -> ServiceName -> IO [AddrInfo]
-resolveListenAddr host port = do
-   let hints = defaultHints { addrFlags = [AI_PASSIVE], addrSocketType = Stream }
-   getAddrInfo (Just hints) host (Just port)
+type SocketHandler m = Socket -> m ()
 
-withListenSocket :: AddrInfo -> (Socket -> IO a) -> IO a
-withListenSocket ai socketHandler = bracket create close run
-  where
-    create   = socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
-    run sock = do setSocketOption sock ReuseAddr 1
-                  withFdSocket sock setCloseOnExecIfNeeded
-                  bind sock (addrAddress ai)
-                  listen sock 10
-                  socketHandler sock
+listener :: (MonadUnliftIO m, MonadLog env m)
+         => (Maybe HostName, ServiceName) -> SocketHandler m -> m ()
+listener listenAddress@(host,port) socketHandler = do
+  let hints = defaultHints { addrFlags = [AI_PASSIVE], addrSocketType = Stream }
+  ais <- liftIO (getAddrInfo (Just hints) host (Just port))
+  logDebug $ "listener: " <> display listenAddress <> " resolves to " <> display (map addrAddress ais)
+  mapConcurrently_ (withListenSocket socketHandler) ais
+
+withListenSocket :: MonadUnliftIO m => SocketHandler m -> AddrInfo -> m ()
+withListenSocket socketHandler ai =
+  bracket (liftIO (socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai))) (liftIO . close) $ \sock -> do
+    liftIO $ do setSocketOption sock ReuseAddr 1
+                withFdSocket sock setCloseOnExecIfNeeded
+                bind sock (addrAddress ai)
+                listen sock 10
+    socketHandler sock
+
+acceptor :: (MonadUnliftIO m, MonadReader env m, HasLog env LogMsg m) => SocketHandler m -> Socket -> m ()
+acceptor socketHandler listenSocket = forever $
+  bracketOnError (liftIO (accept listenSocket)) (liftIO . close . fst) $ \(connSock, connAddr) -> do
+    logDebug $ "accepted connection from " <> display connAddr
+    forkWithUnmask (\unmask -> (unmask ((socketHandler connSock))) `finally` liftIO (close connSock))
