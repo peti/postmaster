@@ -32,6 +32,7 @@ executable postmaster
                   , lens          == 4.17.*
                   , mtl           == 2.2.*
                   , network       == 3.1.*
+                  , resolv == 0.1.*
                   , text          == 1.2.*
                   , unliftio      == 0.2.*
                   , unliftio-core == 0.1.*
