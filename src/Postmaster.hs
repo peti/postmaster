@@ -30,10 +30,10 @@ import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.ByteString.Builder ( Builder, string8, stringUtf8 )
+import Data.ByteString.Builder ( Builder, char8, charUtf8, string8, stringUtf8 )
 import Data.String
 import Data.Text ( Text )
-import System.IO
+import System.IO hiding ( char8 )
 import UnliftIO.Async
 import UnliftIO.Concurrent
 import UnliftIO.Exception

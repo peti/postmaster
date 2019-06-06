@@ -28,7 +28,6 @@ executable postmaster
   hs-source-dirs:   src
   build-depends:    base          == 4.12.*
                   , bytestring    == 0.10.*
-                  , co-log-core   == 0.2.*
                   , hsyslog       == 5.0.*
                   , lens          == 4.17.*
                   , mtl           == 2.2.*

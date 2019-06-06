@@ -1,49 +1,54 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
 import Postmaster
 
-import Colog.Core.Action
-import Colog.Core.Class
-import Colog.Core.Severity as Colog
-import Data.ByteString.Builder
+import Data.ByteString.Builder ( hPutBuilder, toLazyByteString )
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Unsafe as BS
 import Network.Socket hiding ( Debug )
 import System.Posix.Syslog as Syslog
 
-type LogMsg = (Severity, Builder)
+type LogMsg = (Priority, Builder)
 
-type MonadLog env m = (MonadReader env m, HasLog env LogMsg m)
+newtype LogAction m msg = LogAction { _runLogAction :: msg -> m ()  }
 
-logMsg :: MonadLog env m => Severity -> Builder -> m ()
-logMsg pri msg = asks getLogAction >>= \(LogAction f) -> f (pri, msg)
+makeClassy ''LogAction
+
+instance Contravariant (LogAction m) where
+  contramap mapMsg (LogAction f) = LogAction (f . mapMsg)
+
+instance Applicative m => Semigroup (LogAction m msg) where
+  LogAction lhs <> LogAction rhs = LogAction (\msg -> lhs msg *> rhs msg)
+
+instance Applicative m => Monoid (LogAction m msg) where
+  mempty = LogAction (const (pure ()))
+
+type MonadLog env m = (MonadReader env m, HasLogAction env m LogMsg)
+
+logMsg :: (MonadLog env m) => Priority -> Builder -> m ()
+logMsg pri msg = view runLogAction >>= \logger -> logger (pri,msg)
 
 logDebug, logInfo, logWarning, logError :: (MonadLog env m) => Builder -> m ()
-logDebug   = logMsg Colog.Debug
-logInfo    = logMsg Colog.Info
-logWarning = logMsg Colog.Warning
-logError   = logMsg Colog.Error
+logDebug   = logMsg Debug
+logInfo    = logMsg Info
+logWarning = logMsg Warning
+logError   = logMsg Error
 
 logToHandle :: MonadIO m => Handle -> LogAction m LogMsg
-logToHandle h = LogAction $ \(_, msg) -> liftIO (hPutBuilder h (msg <> string8 "\n"))
+logToHandle h = LogAction $ \(_, msg) -> liftIO (hPutBuilder h (msg <> char8 '\n'))
 
 logToSyslog :: MonadIO m => LogAction m LogMsg
 logToSyslog = LogAction $ \(pri,msg) -> liftIO $
                 BS.unsafeUseAsCStringLen (BSL.toStrict (toLazyByteString msg)) $
-                  syslog Nothing (mapPrio pri)
-  where
-    mapPrio Colog.Debug   = Syslog.Debug
-    mapPrio Colog.Info    = Syslog.Info
-    mapPrio Colog.Warning = Syslog.Warning
-    mapPrio Colog.Error   = Syslog.Error
+                  syslog Nothing pri
 
 data IOState = SocketIO { _hinput :: Handle, _houtput :: Handle }
   deriving (Show)
@@ -64,7 +69,14 @@ main =
 postmaster :: (MonadUnliftIO m, MonadLog env m) => m ()
 postmaster = do
   logDebug "postmaster starting up ..."
-  listener (Just "localhost", "2525") (acceptor (const (return ())))
+  listener (Just "localhost", "2525") (acceptor esmtpd)
+
+esmtpd :: (MonadLog env m) => SocketHandler m
+esmtpd sock = do
+  let socketId :: Builder
+      socketId = display sock <> ": "
+  local (over logAction (contramap (over _2 (socketId <>)))) $
+    logDebug "Yeah, let's go."
 
 -- * Network Utilities
 
@@ -87,8 +99,8 @@ withListenSocket socketHandler ai =
                 listen sock 10
     socketHandler sock
 
-acceptor :: (MonadUnliftIO m, MonadReader env m, HasLog env LogMsg m) => SocketHandler m -> Socket -> m ()
+acceptor :: (MonadUnliftIO m, MonadLog env m) => SocketHandler m -> Socket -> m ()
 acceptor socketHandler listenSocket = forever $
   bracketOnError (liftIO (accept listenSocket)) (liftIO . close . fst) $ \(connSock, connAddr) -> do
-    logDebug $ "accepted connection from " <> display connAddr
-    forkWithUnmask (\unmask -> (unmask ((socketHandler connSock))) `finally` liftIO (close connSock))
+    logDebug $ "accepted connection from " <> display connAddr <> " on " <> display connSock
+    forkWithUnmask (\unmask -> unmask (socketHandler connSock) `finally` liftIO (close connSock))
