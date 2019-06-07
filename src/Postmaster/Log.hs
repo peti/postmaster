@@ -22,12 +22,9 @@ module Postmaster.Log
   )
   where
 
-import Control.Lens
-import Control.Monad.Reader
-import Data.ByteString.Builder
-import Data.ByteString.Lazy as BSL
-import Data.ByteString.Unsafe as BS
-import System.IO hiding ( char8 )
+import Postmaster.Prelude
+
+import Data.ByteString.Builder ( hPutBuilder )
 import System.Posix.Syslog
 
 newtype LogAction m msg = LogAction { _runLogAction :: msg -> m ()  }
@@ -61,7 +58,7 @@ logToHandle h = LogAction $ \(_, msg) -> liftIO (hPutBuilder h (msg <> char8 '\n
 
 logToSyslog :: MonadIO m => LogAction m LogMsg
 logToSyslog = LogAction $ \(pri,msg) -> liftIO $
-                BS.unsafeUseAsCStringLen (BSL.toStrict (toLazyByteString msg)) $
+                unsafeUseAsCStringLen (toStrict (toLazyByteString msg)) $
                   syslog Nothing pri
 
 logWithPrefix :: MonadLog env m => Builder -> m a -> m a

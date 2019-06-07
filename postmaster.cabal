@@ -26,6 +26,7 @@ executable postmaster
   main-is:          Main.hs
   other-modules:    Postmaster
                     Postmaster.Log
+                    Postmaster.Prelude
   hs-source-dirs:   src
   build-depends:    base          == 4.12.*
                   , bytestring    == 0.10.*
