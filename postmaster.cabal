@@ -25,6 +25,7 @@ source-repository head
 executable postmaster
   main-is:          Main.hs
   other-modules:    Postmaster
+                    Postmaster.Log
   hs-source-dirs:   src
   build-depends:    base          == 4.12.*
                   , bytestring    == 0.10.*
@@ -32,7 +33,7 @@ executable postmaster
                   , lens          == 4.17.*
                   , mtl           == 2.2.*
                   , network       == 3.1.*
-                  , resolv == 0.1.*
+                  , resolv        == 0.1.*
                   , text          == 1.2.*
                   , unliftio      == 0.2.*
                   , unliftio-core == 0.1.*

@@ -10,49 +10,8 @@ module Main where
 
 import Postmaster
 
-import Data.ByteString.Builder ( hPutBuilder, toLazyByteString )
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Unsafe as BS
-import Network.DNS
 import Network.Socket hiding ( Debug )
 import System.Posix.Syslog as Syslog
-
-type LogMsg = (Priority, Builder)
-
-newtype LogAction m msg = LogAction { _runLogAction :: msg -> m ()  }
-
-makeClassy ''LogAction
-
-instance Contravariant (LogAction m) where
-  contramap mapMsg (LogAction f) = LogAction (f . mapMsg)
-
-instance Applicative m => Semigroup (LogAction m msg) where
-  LogAction lhs <> LogAction rhs = LogAction (\msg -> lhs msg *> rhs msg)
-
-instance Applicative m => Monoid (LogAction m msg) where
-  mempty = LogAction (const (pure ()))
-
-type MonadLog env m = (MonadReader env m, HasLogAction env m LogMsg)
-
-logWithPrefix :: MonadLog env m => Builder -> m a -> m a
-logWithPrefix pref = local (over logAction (contramap (over _2 (pref <>))))
-
-logMsg :: MonadLog env m => Priority -> Builder -> m ()
-logMsg pri msg = view runLogAction >>= \logger -> logger (pri,msg)
-
-logDebug, logInfo, logWarning, logError :: MonadLog env m => Builder -> m ()
-logDebug   = logMsg Debug
-logInfo    = logMsg Info
-logWarning = logMsg Warning
-logError   = logMsg Error
-
-logToHandle :: MonadIO m => Handle -> LogAction m LogMsg
-logToHandle h = LogAction $ \(_, msg) -> liftIO (hPutBuilder h (msg <> char8 '\n'))
-
-logToSyslog :: MonadIO m => LogAction m LogMsg
-logToSyslog = LogAction $ \(pri,msg) -> liftIO $
-                BS.unsafeUseAsCStringLen (BSL.toStrict (toLazyByteString msg)) $
-                  syslog Nothing pri
 
 data IOState = SocketIO { _hinput :: Handle, _houtput :: Handle }
   deriving (Show)

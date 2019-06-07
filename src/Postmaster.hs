@@ -24,9 +24,13 @@ module Postmaster
   , module UnliftIO.Async
   , module UnliftIO.Concurrent
   , module UnliftIO.Exception
+
+  , module Postmaster.Log
   ) where
 
 import Prelude hiding ( fail )
+
+import Postmaster.Log
 
 import Control.Lens
 import Control.Monad hiding ( fail )
