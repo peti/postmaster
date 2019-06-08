@@ -15,7 +15,7 @@ module Postmaster.Prelude
   , module Control.Monad.IO.Class
   , module Control.Monad.IO.Unlift
   , module Control.Monad.Reader
-  , module Control.Monad.State
+  , module Control.Monad.State.Strict
   , module Data.ByteString.Builder, display
   , module Data.String
   , module Data.Word
@@ -38,7 +38,7 @@ import Control.Monad.Fail
 import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
 import Control.Monad.Reader hiding ( fail )
-import Control.Monad.State hiding ( fail )
+import Control.Monad.State.Strict hiding ( fail )
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder ( Builder, char8, charUtf8, string8, stringUtf8, toLazyByteString )
 import qualified Data.ByteString.Lazy as BSL
