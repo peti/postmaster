@@ -24,7 +24,6 @@ import Postmaster.Prelude
 
 import Network.Socket
 import qualified Network.Socket.ByteString as Socket
-import qualified Data.ByteString as BS
 
 data NetworkPeer m = NetworkPeer { _readFromPeer :: Word16 -> m ByteString, _sendToPeer :: ByteString -> m () }
 
@@ -60,26 +59,11 @@ withListenSocket socketHandler ai =
       socketHandler (sock, addrAddress ai)
 
 acceptor :: (MonadUnliftIO m, MonadLog env m) => SocketHandler m -> SocketHandler m
-acceptor socketHandler (listenSocket,listenAddr) = do
-  let socketId = "listener " <> display listenAddr <> ": "
-  logInfo $ socketId <> "accepting incoming connections"
-  forever $
-    bracketOnError (liftIO (accept listenSocket)) (liftIO . close . fst) $ \(connSock, connAddr) -> do
-      logDebug $ socketId <> "new incoming connection from " <> display connAddr
-      forkIOWithUnmask (\unmask -> unmask (socketHandler (connSock,connAddr)) `finally` liftIO (close connSock))
-
-lineReader :: (MonadPeer env m, MonadLog env m) => ByteString -> m ()
-lineReader buf = do
-  let maxLineLength = 4096              -- TODO: magic constant
-      maxReadSize = maxLineLength - BS.length buf
-  if maxReadSize <= 0
-     then logWarning $ "client exceeded maximum line length (" <> display maxLineLength <> " characters)"
-     else do new <- recv (fromIntegral maxReadSize)
-             logDebug $ "recv: " <> display new
-             if BS.null new
-                then logDebug $ "reached end of input (left-over in buffer: " <> display buf <> ")"
-                else case BS.breakSubstring "\r\n" (buf <> new) of
-                       (line,rest) | BS.null rest -> do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
-                                                        lineReader line
-                                   | otherwise    -> do logDebug $ "read line: " <> display line
-                                                        lineReader (BS.drop 2 rest)
+acceptor socketHandler (listenSocket,listenAddr) =
+  enterContext ("listener " <> show listenAddr) $ do
+    logInfo "accepting incoming connections"
+    forever $
+      bracketOnError (liftIO (accept listenSocket)) (liftIO . close . fst) $ \peer@(connSock, connAddr) -> do
+        logDebug $ "new incoming connection from " <> display connAddr
+        forkIOWithUnmask $ \unmask ->
+          unmask (enterContext (show connAddr) (socketHandler peer)) `finally` liftIO (close connSock)
