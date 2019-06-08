@@ -6,12 +6,12 @@ Postmaster
 [![stackage Nightly package](http://stackage.org/package/postmaster/badge/nightly)](http://stackage.org/nightly/package/postmaster)
 [![travis build status](https://img.shields.io/travis/peti/postmaster/master.svg?label=travis+build)](https://travis-ci.org/peti/postmaster)
 
-# DESCRIPTION
+## DESCRIPTION
 
 This software is still under development and not suitable for use by anyone
 other than those developing it. Stay tuned.
 
-# LICENSE
+## LICENSE
 
 Postmaster ESMTP Server
 Copyright (c) 2004-2019 Peter Simons
