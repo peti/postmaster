@@ -25,11 +25,14 @@ source-repository head
 executable postmaster
   main-is:          Main.hs
   other-modules:    Postmaster
+                    Postmaster.Error
+                    Postmaster.IO
                     Postmaster.Log
                     Postmaster.Prelude
   hs-source-dirs:   src
   build-depends:    base          == 4.12.*
                   , bytestring    == 0.10.*
+                  , hsemail       >= 2 && < 2.1
                   , hsyslog       == 5.0.*
                   , lens          == 4.17.*
                   , mtl           == 2.2.*

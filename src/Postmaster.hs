@@ -11,7 +11,11 @@
 module Postmaster
   ( module Postmaster.Prelude
   , module Postmaster.Log
+  , module Postmaster.Error
+  , module Postmaster.IO
   ) where
 
 import Postmaster.Prelude
 import Postmaster.Log
+import Postmaster.Error
+import Postmaster.IO
