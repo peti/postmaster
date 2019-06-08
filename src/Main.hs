@@ -54,6 +54,6 @@ esmtpd :: (MonadUnliftIO m, MonadLog env m, MonadPeer env m) => SocketHandler m
 esmtpd (sock,addr) =
   handle (\e -> logWarning (display (e::SomeException))) $
     enterContext (show addr) $ do
-     (r, _) <- liftIO $ getNameInfo [] True False addr
-     logDebug $ maybe "cannot resolve peer address" (mappend (string8 "peer has DNS name ") . display) r
-     local (set networkPeer (socketIO sock)) (lineReader mempty)
+      (r, _) <- liftIO $ getNameInfo [] True False addr
+      logDebug $ maybe "cannot resolve peer address" (mappend (string8 "peer has DNS name ") . display) r
+      local (set networkPeer (socketIO sock)) (lineReader mempty)
