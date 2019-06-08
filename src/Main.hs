@@ -70,7 +70,7 @@ acceptor socketHandler (listenSocket,listenAddr) = do
   forever $
     bracketOnError (liftIO (accept listenSocket)) (liftIO . close . fst) $ \(connSock, connAddr) -> do
       logDebug $ socketId <> "new incoming connection from " <> display connAddr
-      forkWithUnmask (\unmask -> unmask (socketHandler (connSock,connAddr)) `finally` liftIO (close connSock))
+      forkIOWithUnmask (\unmask -> unmask (socketHandler (connSock,connAddr)) `finally` liftIO (close connSock))
 
 lineReader :: (MonadIO m, MonadLog env m) => ByteString -> SocketHandler m
 lineReader buf peer@(sock,_) = do
