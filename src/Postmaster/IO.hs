@@ -68,7 +68,7 @@ acceptor socketHandler (listenSocket,listenAddr) = do
       logDebug $ socketId <> "new incoming connection from " <> display connAddr
       forkIOWithUnmask (\unmask -> unmask (socketHandler (connSock,connAddr)) `finally` liftIO (close connSock))
 
-lineReader :: (MonadIO m, MonadPeer env m, MonadLog env m) => ByteString -> m ()
+lineReader :: (MonadPeer env m, MonadLog env m) => ByteString -> m ()
 lineReader buf = do
   let maxLineLength = 4096              -- TODO: magic constant
       maxReadSize = maxLineLength - BS.length buf
