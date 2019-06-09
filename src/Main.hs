@@ -20,10 +20,12 @@ module Main where
 
 import Postmaster
 
+import qualified Data.ByteString as BS
 import Network.Socket
 import System.Exit
 import System.Posix.Syslog as Syslog ( withSyslog, Facility(Mail) )
-import qualified Data.ByteString as BS
+import Text.Parsec
+import Text.Parsec.Rfc2821 hiding ( postmaster, send )
 
 data EsmtpEnv m = EsmtpEnv { _esmtpLogger :: LogAction m LogMsg, _esmtpPeer :: NetworkPeer m }
 
@@ -32,21 +34,29 @@ makeClassy ''EsmtpEnv
 instance HasLogAction (EsmtpEnv m) m LogMsg where logAction = esmtpLogger
 instance HasNetworkPeer (EsmtpEnv m) m where networkPeer = esmtpPeer
 
-newtype Postmaster a = Postmaster { runPostmaster :: ReaderT (EsmtpEnv Postmaster) IO a }
-  deriving ( Applicative, Functor, Monad, MonadIO, MonadUnliftIO
-           , MonadReader (EsmtpEnv Postmaster)
+data EsmtpState = EsmtpState
+
+makeClassy ''EsmtpState
+
+type MonadEsmtp st m = (MonadState st m, HasEsmtpState st)
+
+newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpState (ReaderT (EsmtpEnv Esmtpd) IO) a }
+  deriving ( Applicative, Functor, Monad, MonadIO
+           , MonadReader (EsmtpEnv Esmtpd)
+           , MonadState EsmtpState
            )
 
-newtype MainThread a = MainThread { runMainThread :: ReaderT (LogAction MainThread LogMsg) IO a }
+
+newtype Postmaster a = Postmaster { runPostmaster :: ReaderT (LogAction Postmaster LogMsg) IO a }
   deriving ( Applicative, Functor, Monad, MonadIO, MonadUnliftIO
-           , MonadReader (LogAction MainThread LogMsg)
+           , MonadReader (LogAction Postmaster LogMsg)
            )
 
 main :: IO ()
 main =
   withSocketsDo $
     withSyslog "postmaster" [] Mail $
-      runReaderT (runMainThread postmaster) (logToHandle stderr)
+      runReaderT (runPostmaster postmaster) (logToHandle stderr)
 
 postmaster :: (MonadUnliftIO m, MonadLog env m) => m ()
 postmaster =
@@ -56,11 +66,11 @@ postmaster =
 
 esmtpd :: MonadIO m => SocketHandler m
 esmtpd (sock,addr) = do
-  let run = catch (lineReader mempty) (\e -> logWarning ("uncaught exception: " <> display (e::SomeException)))
-      env = EsmtpEnv (logToHandle stderr) (socketIO sock)
-  liftIO $ runReaderT (runPostmaster (logWithPrefix (display addr <> ": ") run)) env
+  let env = EsmtpEnv (logToHandle stderr) (socketIO sock)
+      st  = EsmtpState
+  liftIO $ (runReaderT (evalStateT (runEsmtpd (logWithPrefix (display addr <> ": ") (lineReader mempty))) st) env)
 
-lineReader :: (MonadPeer env m, MonadLog env m) => ByteString -> m ()
+lineReader :: (MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m ()
 lineReader buf = do
   let maxLineLength = 4096              -- TODO: magic constant
       maxReadSize = maxLineLength - BS.length buf
@@ -74,4 +84,11 @@ lineReader buf = do
                        (line,rest) | BS.null rest -> do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
                                                         lineReader line
                                    | otherwise    -> do logDebug $ "read line: " <> display line
+                                                        resp <- case parse smtpCmd "" buf of
+                                                                  Left _ -> return (reply 5 5 0 ["command not recognized"])
+                                                                  Right cmd -> esmtpdFSM cmd
+                                                        send (packBS8 (show resp))
                                                         lineReader (BS.drop 2 rest)
+
+esmtpdFSM :: Monad m => EsmtpCmd -> m EsmtpReply
+esmtpdFSM _ = return $ reply 2 2 0 ["everything is OK"]

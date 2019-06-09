@@ -32,11 +32,12 @@ executable postmaster
   hs-source-dirs:   src
   build-depends:    base          == 4.12.*
                   , bytestring    == 0.10.*
-                  , hsemail       >= 2 && < 2.1
+                  , hsemail       == 2.1.*
                   , hsyslog       == 5.0.*
                   , lens          == 4.17.*
                   , mtl           == 2.2.*
                   , network       == 3.1.*
+                  , parsec        == 3.1.*
                   , resolv        == 0.1.*
                   , text          == 1.2.*
                   , unliftio      >= 0.2.11 && < 0.3
