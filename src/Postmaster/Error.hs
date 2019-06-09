@@ -29,3 +29,6 @@ errorContext ctx = handle (throwIO . ErrorContext ctx)
 
 enterContext :: (MonadUnliftIO m, MonadLog env m) => String -> m a -> m a
 enterContext ctx = errorContext ctx . logWithPrefix (string8 ctx <> ": ")
+
+logUncaughtExceptions :: (MonadUnliftIO m, MonadLog env m) => m () -> m ()
+logUncaughtExceptions f = handle (\e -> logWarning ("uncaught exception: " <> display (e::SomeException))) f

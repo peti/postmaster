@@ -26,7 +26,7 @@ module Postmaster.Prelude
 
   , Text, packText, unpackText, encodeUtf8Text, decodeUtf8Text
   , LazyText, packLazyText, unpackLazyText, encodeUtf8LazyText, decodeUtf8LazyText, BSL.toStrict, BSL.fromStrict
-  , ByteString, packBS, unpackBS, unsafeUseAsCStringLen
+  , ByteString, packBS, packBS8, unpackBS, unpackBS8, unsafeUseAsCStringLen
   , LazyByteString, packLBS, unpackLBS
   ) where
 
@@ -40,6 +40,7 @@ import Control.Monad.IO.Unlift
 import Control.Monad.Reader hiding ( fail )
 import Control.Monad.State.Strict hiding ( fail )
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder ( Builder, char8, charUtf8, string8, stringUtf8, toLazyByteString )
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Unsafe ( unsafeUseAsCStringLen )
@@ -62,8 +63,14 @@ type ByteString = BS.ByteString
 packBS :: [Word8] -> ByteString
 packBS = BS.pack
 
+packBS8 :: String -> ByteString
+packBS8 = BS8.pack
+
 unpackBS :: ByteString -> [Word8]
 unpackBS = BS.unpack
+
+unpackBS8 :: ByteString -> String
+unpackBS8 = BS8.unpack
 
 type LazyByteString = BSL.ByteString
 
