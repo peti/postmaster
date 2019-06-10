@@ -68,7 +68,7 @@ esmtpd :: MonadIO m => SocketHandler m
 esmtpd (sock,addr) = do
   let env = EsmtpEnv (logToHandle stderr) (socketIO sock)
       st  = EsmtpState
-  liftIO $ (runReaderT (evalStateT (runEsmtpd (logWithPrefix (display addr <> ": ") (lineReader mempty))) st) env)
+  liftIO $ runReaderT (evalStateT (runEsmtpd (logWithPrefix (display addr <> ": ") (lineReader mempty))) st) env
 
 lineReader :: (MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m ()
 lineReader buf = do
