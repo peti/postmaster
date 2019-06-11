@@ -66,4 +66,6 @@ acceptor socketHandler (listenSocket,listenAddr) =
       bracketOnError (liftIO (accept listenSocket)) (liftIO . close . fst) $ \peer@(connSock, connAddr) -> do
         logDebug $ "new incoming connection from " <> display connAddr
         forkIOWithUnmask $ \unmask ->
-          unmask (enterContext (show connAddr) (logUncaughtExceptions (socketHandler peer))) `finally` liftIO (close connSock)
+          unmask (enterContext (show connAddr) (logUncaughtExceptions (socketHandler peer)))
+          `finally`
+          liftIO (close connSock)

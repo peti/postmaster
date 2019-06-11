@@ -27,23 +27,23 @@ import System.Posix.Syslog as Syslog ( withSyslog, Facility(Mail) )
 import Text.Parsec
 import Text.Parsec.Rfc2821 hiding ( postmaster, send )
 
-data EsmtpEnv m = EsmtpEnv { _esmtpLogger :: LogAction m LogMsg, _esmtpPeer :: NetworkPeer m }
+data EsmtpdEnv m = EsmtpdEnv { _esmtpLogger :: LogAction m LogMsg, _esmtpPeer :: NetworkPeer m }
 
-makeClassy ''EsmtpEnv
+makeClassy ''EsmtpdEnv
 
-instance HasLogAction (EsmtpEnv m) m LogMsg where logAction = esmtpLogger
-instance HasNetworkPeer (EsmtpEnv m) m where networkPeer = esmtpPeer
+instance HasLogAction (EsmtpdEnv m) m LogMsg where logAction = esmtpLogger
+instance HasNetworkPeer (EsmtpdEnv m) m where networkPeer = esmtpPeer
 
-data EsmtpState = EsmtpState
+data EsmtpdState = EsmtpdState { _myName :: HostName, _peerName :: HostName }
 
-makeClassy ''EsmtpState
+makeClassy ''EsmtpdState
 
-type MonadEsmtp st m = (MonadState st m, HasEsmtpState st)
+type MonadEsmtp st m = (MonadState st m, HasEsmtpdState st)
 
-newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpState (ReaderT (EsmtpEnv Esmtpd) IO) a }
+newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpdState (ReaderT (EsmtpdEnv Esmtpd) IO) a }
   deriving ( Applicative, Functor, Monad, MonadIO
-           , MonadReader (EsmtpEnv Esmtpd)
-           , MonadState EsmtpState
+           , MonadReader (EsmtpdEnv Esmtpd)
+           , MonadState EsmtpdState
            )
 
 
@@ -65,13 +65,20 @@ postmaster =
     listener (Just "0.0.0.0", "2525") (acceptor esmtpd)
 
 esmtpd :: MonadIO m => SocketHandler m
-esmtpd (sock,addr) = do
-  let env = EsmtpEnv (logToHandle stderr) (socketIO sock)
-      st  = EsmtpState
-  liftIO $ runReaderT (evalStateT (runEsmtpd (logWithPrefix (display addr <> ": ") (lineReader mempty))) st) env
+esmtpd (sock,peerAddr) = do
+  localAddr <- liftIO (getSocketName sock)
+  (hn, _) <- liftIO (getNameInfo [] True False localAddr)
+  (pn, _) <- liftIO (getNameInfo [] True False peerAddr)
+  let myname = fromMaybe ("[" <> show localAddr <> "]") hn
+      peername = fromMaybe ("[" <> show peerAddr <> "]") pn
+  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock)
+      st = EsmtpdState myname peername
+      ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
+      greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
+  liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
 
-lineReader :: (MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m ()
-lineReader buf = do
+esmtpdIOLoop :: (MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m ()
+esmtpdIOLoop buf = do
   let maxLineLength = 4096              -- TODO: magic constant
       maxReadSize = maxLineLength - BS.length buf
   if maxReadSize <= 0
@@ -82,13 +89,23 @@ lineReader buf = do
                 then logDebug $ "reached end of input (left-over in buffer: " <> display buf <> ")"
                 else case BS.breakSubstring "\r\n" (buf <> new) of
                        (line,rest) | BS.null rest -> do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
-                                                        lineReader line
+                                                        esmtpdIOLoop line
                                    | otherwise    -> do logDebug $ "read line: " <> display line
-                                                        resp <- case parse smtpCmd "" buf of
-                                                                  Left _ -> return (reply 5 5 0 ["command not recognized"])
-                                                                  Right cmd -> esmtpdFSM cmd
+                                                        resp <- case parse esmtpCmd "" (line <> "\r\n") of
+                                                                  Left err  -> do logDebug $ "unrecognized command: " <> display err
+                                                                                  return (reply 5 0 0 ["syntax error -- command not recognized"])
+                                                                  Right cmd -> do logDebug $ "recv command: " <> display cmd
+                                                                                  esmtpdFSM cmd
                                                         send (packBS8 (show resp))
-                                                        lineReader (BS.drop 2 rest)
+                                                        unless (isShutdown resp) $
+                                                          esmtpdIOLoop (BS.drop 2 rest)
 
-esmtpdFSM :: Monad m => EsmtpCmd -> m EsmtpReply
-esmtpdFSM _ = return $ reply 2 2 0 ["everything is OK"]
+esmtpdFSM :: MonadEsmtp st m => EsmtpCmd -> m EsmtpReply
+esmtpdFSM Quit = do { hn <- use myName; return (reply 2 2 1 [hn <> " Take it easy."]) }
+esmtpdFSM (Helo _) = do hn <- use myName
+                        pn <- use peerName
+                        return $ reply 2 5 0 [hn <> " Hello, " <> pn <> "."]
+
+esmtpdFSM (WrongArg cmd _) = return $ reply 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
+
+esmtpdFSM cmd = return $ reply 5 0 2 ["command " <> show cmd <> " not implemented"]
