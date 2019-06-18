@@ -106,6 +106,6 @@ esmtpdFSM (Helo _) = do hn <- use myName
                         pn <- use peerName
                         return $ reply 2 5 0 [hn <> " Hello, " <> pn <> "."]
 
-esmtpdFSM (WrongArg cmd _) = return $ reply 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
+esmtpdFSM (WrongArg cmd) = return $ reply 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
 
 esmtpdFSM cmd = return $ reply 5 0 2 ["command " <> show cmd <> " not implemented"]
