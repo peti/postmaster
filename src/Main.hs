@@ -91,21 +91,27 @@ esmtpdIOLoop buf = do
                        (line,rest) | BS.null rest -> do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
                                                         esmtpdIOLoop line
                                    | otherwise    -> do logDebug $ "read line: " <> display line
-                                                        resp <- case parse esmtpCmd "" (line <> "\r\n") of
-                                                                  Left err  -> do logDebug $ "unrecognized command: " <> display err
-                                                                                  return (reply 5 0 0 ["syntax error -- command not recognized"])
-                                                                  Right cmd -> do logDebug $ "recv command: " <> display cmd
-                                                                                  esmtpdFSM cmd
+                                                        resp <- esmtpdFSM (parseEsmtp (line <> "\r\n") )
                                                         send (packBS8 (show resp))
                                                         unless (isShutdown resp) $
                                                           esmtpdIOLoop (BS.drop 2 rest)
 
+parseEsmtp :: ByteString -> EsmtpCmd
+parseEsmtp line = fromRight (SyntaxError (unpackBS8 line)) (parse esmtpCmd "" line)
+
 esmtpdFSM :: MonadEsmtp st m => EsmtpCmd -> m EsmtpReply
+
 esmtpdFSM Quit = do { hn <- use myName; return (reply 2 2 1 [hn <> " Take it easy."]) }
+
 esmtpdFSM (Helo _) = do hn <- use myName
                         pn <- use peerName
                         return $ reply 2 5 0 [hn <> " Hello, " <> pn <> "."]
 
+esmtpdFSM (Ehlo _) = do hn <- use myName
+                        pn <- use peerName
+                        return $ reply 2 5 0 [hn <> " Hello, " <> pn <> ".", "PIPELINING", "STARTTLS"]
+
+esmtpdFSM (SyntaxError _) = return $ reply 5 0 0 ["syntax error: command not recognized"]
 esmtpdFSM (WrongArg cmd) = return $ reply 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
 
 esmtpdFSM cmd = return $ reply 5 0 2 ["command " <> show cmd <> " not implemented"]

@@ -17,8 +17,9 @@ module Postmaster.Prelude
   , module Control.Monad.Reader
   , module Control.Monad.State.Strict
   , module Data.ByteString.Builder, display
-  , module Data.String
+  , module Data.Either
   , module Data.Maybe
+  , module Data.String
   , module Data.Word
   , module System.IO
   , module UnliftIO.Async
@@ -45,6 +46,7 @@ import Data.ByteString.Builder ( Builder, char8, charUtf8, string8, stringUtf8, 
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Unsafe ( unsafeUseAsCStringLen )
+import Data.Either
 import Data.Maybe
 import Data.String
 import qualified Data.Text as Text
