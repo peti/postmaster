@@ -34,7 +34,7 @@ module Postmaster.Prelude
 
 import Prelude hiding ( fail )
 
-import Control.Lens
+import Control.Lens hiding ( Context )
 import Control.Monad hiding ( fail )
 import Control.Monad.Fail
 import Control.Monad.IO.Class

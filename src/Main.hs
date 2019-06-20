@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {- |
    Module:      Main
    Copyright:   (C) 2004-2019 Peter Simons
@@ -20,10 +21,19 @@ module Main where
 
 import Postmaster
 
+import Control.Monad
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import Data.Default.Class
+import Data.X509.CertificateStore
 import Network.Socket
+import Network.TLS as TLS hiding ( HostName )
+import Network.TLS.Extra.Cipher as TLS
+import Network.TLS.SessionManager as TLS
 import System.Exit
 import System.Posix.Syslog as Syslog ( withSyslog, Facility(Mail) )
+import System.Timeout
+import System.X509
 import Text.Parsec
 import Text.Parsec.Rfc2821 hiding ( postmaster, send )
 
@@ -46,7 +56,6 @@ newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpdState (ReaderT (EsmtpdEnv 
            , MonadState EsmtpdState
            )
 
-
 newtype Postmaster a = Postmaster { runPostmaster :: ReaderT (LogAction Postmaster LogMsg) IO a }
   deriving ( Applicative, Functor, Monad, MonadIO, MonadUnliftIO
            , MonadReader (LogAction Postmaster LogMsg)
@@ -62,10 +71,11 @@ postmaster :: (MonadUnliftIO m, MonadLog env m) => m ()
 postmaster =
   handle (\e -> logError ("fatal error: " <> display (e::SomeException)) >> liftIO exitFailure) $ do
     logDebug "postmaster starting up ..."
-    listener (Just "0.0.0.0", "2525") (acceptor esmtpdAcceptor)
+    tlsParams <- liftIO makeTlsServerParams
+    listener (Just "0.0.0.0", "2525") (acceptor (esmtpdAcceptor tlsParams))
 
-esmtpdAcceptor :: MonadIO m => SocketHandler m
-esmtpdAcceptor (sock,peerAddr) = do
+esmtpdAcceptor :: MonadUnliftIO m => ServerParams -> SocketHandler m
+esmtpdAcceptor tlsParams (sock,peerAddr) = do
   localAddr <- liftIO (getSocketName sock)
   (hn, _) <- liftIO (getNameInfo [] True False localAddr)
   (pn, _) <- liftIO (getNameInfo [] True False peerAddr)
@@ -75,34 +85,58 @@ esmtpdAcceptor (sock,peerAddr) = do
       st = EsmtpdState myname peername
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
-  liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
+  ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
+  case ioact of
+    StartTls -> esmtpdAcceptorTls tlsParams env st (sock,peerAddr)
+    Shutdown -> return ()
 
-esmtpdIOLoop :: (MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m ()
+esmtpdAcceptorTls :: MonadUnliftIO m => ServerParams -> EsmtpdEnv Esmtpd -> EsmtpdState -> SocketHandler m
+esmtpdAcceptorTls tlsParams env st (sock,peerAddr) = do
+  bracket (contextNew sock tlsParams) bye $ \ctx -> do
+    -- contextHookSetLogging ctx tlsLogging
+    handshake ctx
+    let ioLoop = logWithPrefix (display peerAddr <> ": TLS: ") (esmtpdIOLoop mempty)
+        env' = set esmtpPeer (tlsIO ctx) env
+    ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd ioLoop) st) env'
+    case ioact of
+      StartTls -> undefined -- TODO
+      Shutdown -> return ()
+
+esmtpdIOLoop :: (MonadIO m, MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m EsmtpdIOAction
 esmtpdIOLoop buf = do
   let maxLineLength = 4096              -- TODO: magic constant
       maxReadSize = maxLineLength - BS.length buf
   if maxReadSize <= 0
-     then logWarning $ "client exceeded maximum line length (" <> display maxLineLength <> " characters)"
+     then do logWarning $ "client exceeded maximum line length (" <> display maxLineLength <> " characters)"
+             return Shutdown
      else do new <- recv (fromIntegral maxReadSize)
              logDebug $ "recv: " <> display new
              if BS.null new
-                then logDebug $ "reached end of input (left-over in buffer: " <> display buf <> ")"
+                then do logDebug $ "reached end of input (left-over in buffer: " <> display buf <> ")"
+                        return Shutdown
                 else case BS.breakSubstring "\r\n" (buf <> new) of
                        (line,rest) | BS.null rest -> do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
                                                         esmtpdIOLoop line
                                    | otherwise    -> do logDebug $ "read line: " <> display line
-                                                        resp <- esmtpdFSM (parseEsmtpCmd (line <> "\r\n") )
+                                                        (ioact,resp) <- esmtpdFSM (parseEsmtpCmd (line <> "\r\n") )
                                                         send (packBS8 (show resp))
-                                                        unless (isShutdown resp) $
-                                                          esmtpdIOLoop (BS.drop 2 rest)
+                                                        case ioact of
+                                                          Nothing -> esmtpdIOLoop (BS.drop 2 rest)
+                                                          Just act -> return act
+
+
+data EsmtpdIOAction = StartTls | Shutdown
+  deriving (Show)
 
 parseEsmtpCmd :: ByteString -> EsmtpCmd
 parseEsmtpCmd line = fromRight (SyntaxError (unpackBS8 line)) (parse (esmtpCmd <* eof) "" line)
 
-esmtpdFSM :: MonadEsmtp st m => EsmtpCmd -> m EsmtpReply
+esmtpdFSM :: MonadEsmtp st m => EsmtpCmd -> m (Maybe EsmtpdIOAction,  EsmtpReply)
 
 esmtpdFSM Quit = do hn <- use myName
-                    respond 2 2 1 [hn <> " Take it easy."]
+                    respond' Shutdown 2 2 1 [hn <> " Take it easy."]
+
+esmtpdFSM StartTLS = respond' StartTls 2 2 0 ["starting TLS"]
 
 esmtpdFSM (Helo _) = do hn <- use myName
                         pn <- use peerName
@@ -119,10 +153,37 @@ esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
 
 ----- Helper functions
 
-respond :: Monad m => Int -> Int -> Int -> [String] -> m EsmtpReply
-respond x y z = pure . reply x y z
+makeTlsServerParams :: IO ServerParams
+makeTlsServerParams = do
+  cred <- loadCred
+  store <- getSystemCertificateStore
+  smgr <- newSessionManager defaultConfig
+  return $ def
+   { serverShared = def { sharedSessionManager  = smgr
+                        , sharedCAStore         = store
+                        , sharedCredentials     = Credentials [cred]
+                        }
+   , serverSupported = def { supportedCiphers = ciphersuite_default }
+   }
+
+respond :: Monad m => Int -> Int -> Int -> [String] -> m (Maybe EsmtpdIOAction, EsmtpReply)
+respond x y z msg = return (Nothing, reply x y z msg)
+
+respond' :: Monad m => EsmtpdIOAction -> Int -> Int -> Int -> [String] -> m (Maybe EsmtpdIOAction, EsmtpReply)
+respond' ioact x y z msg = return (Just ioact, reply x y z msg)
 
 splitLine :: ByteString -> Maybe (ByteString, ByteString)
 splitLine buf = case BS.breakSubstring "\r\n" buf of
                   (line,rest) | BS.null rest -> Nothing
                               | otherwise    -> Just (BS.splitAt (BS.length line + 2) buf)
+
+loadCred :: IO Credential
+loadCred = do
+  credentialLoadX509 "/home/simons/src/peti-ca/latitude-cert.pem"
+                     "/home/simons/src/peti-ca/latitude-key.pem"
+  >>= \case Left err -> Postmaster.fail ("cannot load certificate: " ++ err)
+            Right v  -> return v
+
+
+tlsIO :: MonadIO m => Context -> NetworkPeer m
+tlsIO ctx = NetworkPeer (const (TLS.recvData ctx)) (TLS.sendData ctx . fromStrict)
