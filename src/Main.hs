@@ -21,34 +21,35 @@ module Main where
 
 import Postmaster
 
-import Control.Monad
+import Control.Exception ( AssertionFailed(..) )
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
-import Data.Default.Class
-import Data.X509.CertificateStore
 import Network.Socket
 import Network.TLS as TLS hiding ( HostName )
 import Network.TLS.Extra.Cipher as TLS
 import Network.TLS.SessionManager as TLS
 import System.Exit
 import System.Posix.Syslog as Syslog ( withSyslog, Facility(Mail) )
-import System.Timeout
 import System.X509
 import Text.Parsec
 import Text.Parsec.Rfc2821 hiding ( postmaster, send )
 
-data EsmtpdEnv m = EsmtpdEnv { _esmtpLogger :: LogAction m LogMsg, _esmtpPeer :: NetworkPeer m }
+data TlsState = NotSupported | Unused | Connected
+
+data EsmtpdEnv m = EsmtpdEnv { _esmtpdLogger :: LogAction m LogMsg
+                             , _esmtpdPeer :: NetworkPeer m
+                             , _esmtpdTlsState :: TlsState
+                             }
 
 makeClassy ''EsmtpdEnv
 
-instance HasLogAction (EsmtpdEnv m) m LogMsg where logAction = esmtpLogger
-instance HasNetworkPeer (EsmtpdEnv m) m where networkPeer = esmtpPeer
+instance HasLogAction (EsmtpdEnv m) m LogMsg where logAction = esmtpdLogger
+instance HasNetworkPeer (EsmtpdEnv m) m where networkPeer = esmtpdPeer
 
 data EsmtpdState = EsmtpdState { _myName :: HostName, _peerName :: HostName }
 
 makeClassy ''EsmtpdState
 
-type MonadEsmtp st m = (MonadState st m, HasEsmtpdState st)
+type MonadEsmtpd env st m = (MonadReader env m, HasEsmtpdEnv env m, MonadState st m, HasEsmtpdState st)
 
 newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpdState (ReaderT (EsmtpdEnv Esmtpd) IO) a }
   deriving ( Applicative, Functor, Monad, MonadIO
@@ -81,7 +82,7 @@ esmtpdAcceptor tlsParams (sock,peerAddr) = do
   (pn, _) <- liftIO (getNameInfo [] True False peerAddr)
   let myname = fromMaybe ("[" <> show localAddr <> "]") hn
       peername = fromMaybe ("[" <> show peerAddr <> "]") pn
-  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock)
+  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) Unused
       st = EsmtpdState myname peername
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
@@ -91,18 +92,19 @@ esmtpdAcceptor tlsParams (sock,peerAddr) = do
     Shutdown -> return ()
 
 esmtpdAcceptorTls :: MonadUnliftIO m => ServerParams -> EsmtpdEnv Esmtpd -> EsmtpdState -> SocketHandler m
-esmtpdAcceptorTls tlsParams env st (sock,peerAddr) = do
+esmtpdAcceptorTls tlsParams env st (sock,peerAddr) =
   bracket (contextNew sock tlsParams) bye $ \ctx -> do
     -- contextHookSetLogging ctx tlsLogging
     handshake ctx
     let ioLoop = logWithPrefix (display peerAddr <> ": TLS: ") (esmtpdIOLoop mempty)
-        env' = set esmtpPeer (tlsIO ctx) env
+        env' = env & esmtpdPeer .~ tlsIO ctx
+                   & esmtpdTlsState .~ Connected
     ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd ioLoop) st) env'
     case ioact of
-      StartTls -> undefined -- TODO
+      StartTls -> throwIO (AssertionFailed "STARTTLS triggered twice")
       Shutdown -> return ()
 
-esmtpdIOLoop :: (MonadIO m, MonadEsmtp st m, MonadPeer env m, MonadLog env m) => ByteString -> m EsmtpdIOAction
+esmtpdIOLoop :: (MonadIO m, MonadEsmtpd env st m, MonadPeer env m, MonadLog env m) => ByteString -> m EsmtpdIOAction
 esmtpdIOLoop buf = do
   let maxLineLength = 4096              -- TODO: magic constant
       maxReadSize = maxLineLength - BS.length buf
@@ -124,19 +126,16 @@ esmtpdIOLoop buf = do
                                                           Nothing -> esmtpdIOLoop (BS.drop 2 rest)
                                                           Just act -> return act
 
-
 data EsmtpdIOAction = StartTls | Shutdown
   deriving (Show)
 
-parseEsmtpCmd :: ByteString -> EsmtpCmd
-parseEsmtpCmd line = fromRight (SyntaxError (unpackBS8 line)) (parse (esmtpCmd <* eof) "" line)
-
-esmtpdFSM :: MonadEsmtp st m => EsmtpCmd -> m (Maybe EsmtpdIOAction,  EsmtpReply)
+esmtpdFSM :: MonadEsmtpd env st m => EsmtpCmd -> m (Maybe EsmtpdIOAction,  EsmtpReply)
 
 esmtpdFSM Quit = do hn <- use myName
                     respond' Shutdown 2 2 1 [hn <> " Take it easy."]
 
-esmtpdFSM StartTLS = respond' StartTls 2 2 0 ["starting TLS"]
+esmtpdFSM StartTLS = ifM supportStartTls (respond' StartTls 2 2 0 ["starting TLS"])
+                                         (respond 5 5 4 ["cannot start TLS"])
 
 esmtpdFSM (Helo _) = do hn <- use myName
                         pn <- use peerName
@@ -144,7 +143,8 @@ esmtpdFSM (Helo _) = do hn <- use myName
 
 esmtpdFSM (Ehlo _) = do hn <- use myName
                         pn <- use peerName
-                        respond 2 5 0 [hn <> " Hello, " <> pn <> ".", "PIPELINING", "STARTTLS"]
+                        withTls <- supportStartTls
+                        respond 2 5 0 $ [hn <> " Hello, " <> pn <> ".", "PIPELINING"] ++ ["STARTTLS" | withTls]
 
 esmtpdFSM (SyntaxError _) = respond 5 0 0 ["syntax error: command not recognized"]
 esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
@@ -152,6 +152,12 @@ esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd 
 esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
 
 ----- Helper functions
+
+supportStartTls :: MonadEsmtpd env st m => m Bool
+supportStartTls = views esmtpdTlsState $ \case
+                    NotSupported -> False
+                    Unused       -> True
+                    Connected    -> False
 
 makeTlsServerParams :: IO ServerParams
 makeTlsServerParams = do
@@ -166,6 +172,9 @@ makeTlsServerParams = do
    , serverSupported = def { supportedCiphers = ciphersuite_default }
    }
 
+parseEsmtpCmd :: ByteString -> EsmtpCmd
+parseEsmtpCmd line = fromRight (SyntaxError (unpackBS8 line)) (parse (esmtpCmd <* eof) "" line)
+
 respond :: Monad m => Int -> Int -> Int -> [String] -> m (Maybe EsmtpdIOAction, EsmtpReply)
 respond x y z msg = return (Nothing, reply x y z msg)
 
@@ -178,9 +187,8 @@ splitLine buf = case BS.breakSubstring "\r\n" buf of
                               | otherwise    -> Just (BS.splitAt (BS.length line + 2) buf)
 
 loadCred :: IO Credential
-loadCred = do
-  credentialLoadX509 "/home/simons/src/peti-ca/latitude-cert.pem"
-                     "/home/simons/src/peti-ca/latitude-key.pem"
+loadCred = credentialLoadX509 "/home/simons/src/peti-ca/latitude-cert.pem"
+                              "/home/simons/src/peti-ca/latitude-key.pem"
   >>= \case Left err -> Postmaster.fail ("cannot load certificate: " ++ err)
             Right v  -> return v
 

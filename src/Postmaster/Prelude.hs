@@ -10,7 +10,7 @@
 
 module Postmaster.Prelude
   ( module Control.Lens
-  , module Control.Monad
+  , module Control.Monad.Extra
   , module Control.Monad.Fail
   , module Control.Monad.IO.Class
   , module Control.Monad.IO.Unlift
@@ -18,6 +18,7 @@ module Postmaster.Prelude
   , module Control.Monad.State.Strict
   , module Data.ByteString.Builder, display
   , module Data.Either
+  , module Data.Default.Class
   , module Data.Maybe
   , module Data.String
   , module Data.Word
@@ -35,7 +36,7 @@ module Postmaster.Prelude
 import Prelude hiding ( fail )
 
 import Control.Lens hiding ( Context )
-import Control.Monad hiding ( fail )
+import Control.Monad.Extra hiding ( fail )
 import Control.Monad.Fail
 import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
@@ -46,6 +47,7 @@ import Data.ByteString.Builder ( Builder, char8, charUtf8, string8, stringUtf8, 
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Unsafe ( unsafeUseAsCStringLen )
+import Data.Default.Class
 import Data.Either
 import Data.Maybe
 import Data.String

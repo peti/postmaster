@@ -33,6 +33,7 @@ executable postmaster
   build-depends:    base                == 4.12.*
                   , bytestring          == 0.10.*
                   , data-default-class  == 0.1.*
+                  , extra               == 1.6.*
                   , hsemail             == 2.2.*
                   , hsyslog             == 5.0.*
                   , lens                == 4.17.*
