@@ -117,5 +117,12 @@ esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd 
 
 esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
 
+----- Helper functions
+
 respond :: Monad m => Int -> Int -> Int -> [String] -> m EsmtpReply
 respond x y z = pure . reply x y z
+
+splitLine :: ByteString -> Maybe (ByteString, ByteString)
+splitLine buf = case BS.breakSubstring "\r\n" buf of
+                  (line,rest) | BS.null rest -> Nothing
+                              | otherwise    -> Just (BS.splitAt (BS.length line + 2) buf)
