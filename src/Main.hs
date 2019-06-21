@@ -8,6 +8,7 @@
    Portability: non-portable
  -}
 
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -15,23 +16,28 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
+import Paths_postmaster ( version )
 import Postmaster
 
 import Control.Exception ( AssertionFailed(..) )
 import qualified Data.ByteString as BS
+import Data.List as List
+import Data.Version
 import Network.Socket
 import Network.TLS as TLS hiding ( HostName )
 import Network.TLS.Extra.Cipher as TLS
 import Network.TLS.SessionManager as TLS
+import Options.Applicative
 import System.Exit
 import System.Posix.Syslog as Syslog ( withSyslog, Facility(Mail) )
 import System.X509
-import Text.Parsec
-import Text.Parsec.Rfc2821 hiding ( postmaster, send )
+import Text.Parsec ( parse, eof )
+import Text.Parsec.Rfc2821 hiding ( postmaster, send, help )
 
 data TlsState = NotSupported | Unused | Connected
 
@@ -62,11 +68,41 @@ newtype Postmaster a = Postmaster { runPostmaster :: ReaderT (LogAction Postmast
            , MonadReader (LogAction Postmaster LogMsg)
            )
 
+data CliOptions = CliOptions
+  { listenAddrSpecs :: [String]
+  , tlsCertFile :: Maybe FilePath
+  , tlsKeyFile :: Maybe FilePath
+  }
+  deriving (Show)
+
+data Configuration = Configuration
+  { listenAddresses :: [(Maybe HostName, ServiceName)]
+  , credential :: Maybe Credential
+  }
+  deriving (Show)
+
+cliOptions :: Parser CliOptions
+cliOptions = do
+  listenAddrSpecs <- many (strOption $ long "listen" <> metavar "addr-spec" <> help "Accept incoming connections on this address. Can be specified multiple times.")
+  tlsCertFile <- optional (strOption $ long "tls-cert" <> metavar "PATH" <> help "The server's TLS certificate.")
+  tlsKeyFile <- optional (strOption $ long "tls-key" <> metavar "PATH" <> help "The server's TLS private key.")
+  pure CliOptions {..}
+
+cli :: ParserInfo CliOptions
+cli = info
+      (   helper
+      <*> infoOption ("postmaster version " ++ showVersion version) (long "version" <> help "Show version number")
+      <*> cliOptions
+      )
+      (briefDesc <> header ("Postmaster ESMTP Server version " ++ showVersion version))
+
+
 main :: IO ()
 main =
   withSocketsDo $
-    withSyslog "postmaster" [] Mail $
-      runReaderT (runPostmaster postmaster) (logToHandle stderr)
+    withSyslog "postmaster" [] Mail $ (do
+      cfg@Configuration {..} <- execParser cli >>= makeConfiguration
+      runReaderT (runPostmaster postmaster) (logToHandle stderr))
 
 postmaster :: (MonadUnliftIO m, MonadLog env m) => m ()
 postmaster =
@@ -159,6 +195,16 @@ supportStartTls = views esmtpdTlsState $ \case
                     Unused       -> True
                     Connected    -> False
 
+makeConfiguration :: CliOptions -> IO Configuration
+makeConfiguration CliOptions {..} = do
+  let listenAddresses = map parseListenAddr listenAddrSpecs
+  credential <- case (tlsCertFile, tlsKeyFile) of
+                  (Just cf, Just kf) -> credentialLoadX509 cf kf >>=
+                                          \case Left err -> Postmaster.fail ("cannot load certificate: " ++ err)
+                                                Right v  -> return (Just v)
+                  _                  -> return Nothing
+  pure Configuration {..}
+
 makeTlsServerParams :: IO ServerParams
 makeTlsServerParams = do
   cred <- loadCred
@@ -169,7 +215,9 @@ makeTlsServerParams = do
                         , sharedCAStore         = store
                         , sharedCredentials     = Credentials [cred]
                         }
-   , serverSupported = def { supportedCiphers = ciphersuite_default }
+   , serverSupported = def { supportedCiphers = ciphersuite_default
+                           , supportedHashSignatures = delete (HashIntrinsic, SignatureRSApssRSAeSHA512) (supportedHashSignatures def)
+                           }
    }
 
 parseEsmtpCmd :: ByteString -> EsmtpCmd
@@ -195,3 +243,23 @@ loadCred = credentialLoadX509 "/home/simons/src/peti-ca/latitude-cert.pem"
 
 tlsIO :: MonadIO m => Context -> NetworkPeer m
 tlsIO ctx = NetworkPeer (const (TLS.recvData ctx)) (TLS.sendData ctx . fromStrict)
+
+-- | Parse a listen address specification into a (host name, service name)
+-- tuple suitable for resolution with 'getAddrInfo'.
+--
+-- >>> parseListenAddr "0.0.0.0:25"
+-- (Just "0.0.0.0","25")
+--
+-- >>> parseListenAddr "localhost:smtp"
+-- (Just "localhost","smtp")
+--
+-- >>> parseListenAddr ":::25"
+-- (Just "::","25")
+--
+-- >>> parseListenAddr "25"
+-- (Nothing,"25")
+
+parseListenAddr :: String -> (Maybe HostName, ServiceName)
+parseListenAddr buf = case break (==':') (reverse buf) of
+                        (sn,"") -> (Nothing, reverse sn)
+                        (sn,hn) -> (Just (reverse (drop 1 hn)), reverse sn)
