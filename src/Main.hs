@@ -236,12 +236,6 @@ splitLine buf = case BS.breakSubstring "\r\n" buf of
                   (line,rest) | BS.null rest -> Nothing
                               | otherwise    -> Just (BS.splitAt (BS.length line + 2) buf)
 
-loadCred :: IO Credential
-loadCred = credentialLoadX509 "/home/simons/src/peti-ca/latitude-cert.pem"
-                              "/home/simons/src/peti-ca/latitude-key.pem"
-  >>= \case Left err -> Postmaster.fail ("cannot load certificate: " ++ err)
-            Right v  -> return v
-
 
 tlsIO :: MonadIO m => Context -> NetworkPeer m
 tlsIO ctx = NetworkPeer (const (TLS.recvData ctx)) (TLS.sendData ctx . fromStrict)
