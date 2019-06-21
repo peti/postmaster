@@ -69,7 +69,7 @@ newtype Postmaster a = Postmaster { runPostmaster :: ReaderT (LogAction Postmast
            )
 
 data CliOptions = CliOptions
-  { listenAddrSpecs :: [String]
+  { listenAddressStrings :: [String]
   , tlsCertFile :: Maybe FilePath
   , tlsKeyFile :: Maybe FilePath
   }
@@ -83,7 +83,7 @@ data Configuration = Configuration
 
 cliOptions :: Parser CliOptions
 cliOptions = do
-  listenAddrSpecs <- many (strOption $ long "listen" <> metavar "ADDR-SPEC" <> help "Accept incoming connections on this address. Can be specified multiple times.")
+  listenAddressStrings <- many (strOption $ long "listen" <> metavar "ADDR-SPEC" <> help "Accept incoming connections on this address. Can be specified multiple times.")
   tlsCertFile <- optional (strOption $ long "tls-cert" <> metavar "PATH" <> help "The server's TLS certificate.")
   tlsKeyFile <- optional (strOption $ long "tls-key" <> metavar "PATH" <> help "The server's TLS private key.")
   pure CliOptions {..}
@@ -199,8 +199,8 @@ supportStartTls = views esmtpdTlsState $ \case
 makeConfiguration :: CliOptions -> IO Configuration
 makeConfiguration CliOptions {..} = do
   let listenAddresses
-        | null listenAddrSpecs  = [(Nothing, "25")]
-        | otherwise             = map parseListenAddr listenAddrSpecs
+        | null listenAddressStrings = [(Nothing, "25")]
+        | otherwise                 = map parseListenAddr listenAddressStrings
   tlsServerParams <- case (tlsCertFile, tlsKeyFile) of
     (Just cf, Just kf) -> credentialLoadX509 cf kf >>=
                             \case Left err   -> Postmaster.fail ("cannot load certificate: " ++ err)
