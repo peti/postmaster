@@ -77,13 +77,13 @@ data CliOptions = CliOptions
 
 data Configuration = Configuration
   { listenAddresses :: [(Maybe HostName, ServiceName)]
-  , credential :: Maybe Credential
+  , tlsServerParams :: Maybe ServerParams
   }
   deriving (Show)
 
 cliOptions :: Parser CliOptions
 cliOptions = do
-  listenAddrSpecs <- many (strOption $ long "listen" <> metavar "addr-spec" <> help "Accept incoming connections on this address. Can be specified multiple times.")
+  listenAddrSpecs <- many (strOption $ long "listen" <> metavar "ADDR-SPEC" <> help "Accept incoming connections on this address. Can be specified multiple times.")
   tlsCertFile <- optional (strOption $ long "tls-cert" <> metavar "PATH" <> help "The server's TLS certificate.")
   tlsKeyFile <- optional (strOption $ long "tls-key" <> metavar "PATH" <> help "The server's TLS private key.")
   pure CliOptions {..}
@@ -96,35 +96,36 @@ cli = info
       )
       (briefDesc <> header ("Postmaster ESMTP Server version " ++ showVersion version))
 
-
 main :: IO ()
 main =
   withSocketsDo $
     withSyslog "postmaster" [] Mail $ (do
-      cfg@Configuration {..} <- execParser cli >>= makeConfiguration
-      runReaderT (runPostmaster postmaster) (logToHandle stderr))
+      cfg <- execParser cli >>= makeConfiguration
+      runReaderT (runPostmaster (postmaster cfg)) (logToHandle stderr))
 
-postmaster :: (MonadUnliftIO m, MonadLog env m) => m ()
-postmaster =
+postmaster :: (MonadUnliftIO m, MonadLog env m) => Configuration -> m ()
+postmaster cfg =
   handle (\e -> logError ("fatal error: " <> display (e::SomeException)) >> liftIO exitFailure) $ do
     logDebug "postmaster starting up ..."
-    tlsParams <- liftIO makeTlsServerParams
-    listener (Just "0.0.0.0", "2525") (acceptor (esmtpdAcceptor tlsParams))
+    logInfo $ display cfg
+    mapConcurrently_ (flip listener (acceptor (esmtpdAcceptor (tlsServerParams cfg)))) (listenAddresses cfg)
 
-esmtpdAcceptor :: MonadUnliftIO m => ServerParams -> SocketHandler m
+esmtpdAcceptor :: MonadUnliftIO m => Maybe ServerParams -> SocketHandler m
 esmtpdAcceptor tlsParams (sock,peerAddr) = do
   localAddr <- liftIO (getSocketName sock)
   (hn, _) <- liftIO (getNameInfo [] True False localAddr)
   (pn, _) <- liftIO (getNameInfo [] True False peerAddr)
   let myname = fromMaybe ("[" <> show localAddr <> "]") hn
       peername = fromMaybe ("[" <> show peerAddr <> "]") pn
-  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) Unused
+  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) (if isJust tlsParams then Unused else NotSupported)
       st = EsmtpdState myname peername
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
   ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
   case ioact of
-    StartTls -> esmtpdAcceptorTls tlsParams env st (sock,peerAddr)
+    StartTls -> case tlsParams of
+                  Nothing -> throwIO (AssertionFailed "STARTTLS triggered even though TLS is unsupported")
+                  Just tlsp -> esmtpdAcceptorTls tlsp env st (sock,peerAddr)
     Shutdown -> return ()
 
 esmtpdAcceptorTls :: MonadUnliftIO m => ServerParams -> EsmtpdEnv Esmtpd -> EsmtpdState -> SocketHandler m
@@ -197,17 +198,18 @@ supportStartTls = views esmtpdTlsState $ \case
 
 makeConfiguration :: CliOptions -> IO Configuration
 makeConfiguration CliOptions {..} = do
-  let listenAddresses = map parseListenAddr listenAddrSpecs
-  credential <- case (tlsCertFile, tlsKeyFile) of
-                  (Just cf, Just kf) -> credentialLoadX509 cf kf >>=
-                                          \case Left err -> Postmaster.fail ("cannot load certificate: " ++ err)
-                                                Right v  -> return (Just v)
-                  _                  -> return Nothing
+  let listenAddresses
+        | null listenAddrSpecs  = [(Nothing, "25")]
+        | otherwise             = map parseListenAddr listenAddrSpecs
+  tlsServerParams <- case (tlsCertFile, tlsKeyFile) of
+    (Just cf, Just kf) -> credentialLoadX509 cf kf >>=
+                            \case Left err   -> Postmaster.fail ("cannot load certificate: " ++ err)
+                                  Right cred -> Just <$> makeTlsServerParams cred
+    _                  -> return Nothing
   pure Configuration {..}
 
-makeTlsServerParams :: IO ServerParams
-makeTlsServerParams = do
-  cred <- loadCred
+makeTlsServerParams :: Credential -> IO ServerParams
+makeTlsServerParams cred = do
   store <- getSystemCertificateStore
   smgr <- newSessionManager defaultConfig
   return $ def

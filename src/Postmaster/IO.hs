@@ -22,6 +22,7 @@ import Postmaster.Error
 import Postmaster.Log
 import Postmaster.Prelude
 
+import Control.Exception ( AssertionFailed(..) )
 import Network.Socket
 import qualified Network.Socket.ByteString as Socket
 
@@ -46,7 +47,9 @@ listener :: MonadUnliftIO m => (Maybe HostName, ServiceName) -> SocketHandler m 
 listener (host,port) socketHandler = do
   let hints = defaultHints { addrFlags = [AI_PASSIVE], addrSocketType = Stream }
   ais <- liftIO (getAddrInfo (Just hints) host (Just port))
-  mapConcurrently_ (withListenSocket socketHandler) ais
+  if null ais
+     then throwIO (AssertionFailed ("getAddrInfo " <> show (host,port) <> " returned no result"))
+     else withListenSocket socketHandler (head ais)
 
 withListenSocket :: MonadUnliftIO m => SocketHandler m -> AddrInfo -> m ()
 withListenSocket socketHandler ai =
