@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 {- |
    Module:      Main
    Copyright:   (C) 2004-2019 Peter Simons
@@ -9,13 +8,14 @@
    Portability: non-portable
  -}
 
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Main where
 
