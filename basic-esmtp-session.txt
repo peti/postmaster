@@ -1,0 +1,10 @@
+EHLO foobar.example.org
+MAIL FROM:<postmaster@cryp.to>
+RCPT TO:<simons@cryp.to>
+DATA
+From: Peter Simons <postmaster@cryp.to>
+Subject: This is a test
+
+This mail body contains no useful information.
+.
+QUIT

@@ -51,11 +51,26 @@ makeClassy ''EsmtpdEnv
 instance HasLogAction (EsmtpdEnv m) m LogMsg where logAction = esmtpdLogger
 instance HasNetworkPeer (EsmtpdEnv m) m where networkPeer = esmtpdPeer
 
-data EsmtpdState = EsmtpdState { _myName :: HostName, _peerName :: HostName }
+data SessionState = Initial
+                  | HaveEhlo { _ehloName :: String }
+                  | HaveMailFrom { _ehloName :: String, _envelope :: Mailbox }
+                  | HaveRcptTo { _ehloName :: String, _envelope :: Mailbox, _rcptTo :: [Mailbox] }
+  deriving (Show)
+
+makeClassy ''SessionState
+
+data EsmtpdState = EsmtpdState { _myName :: HostName, _peerName :: HostName
+                               , _session :: SessionState
+                               }
 
 makeClassy ''EsmtpdState
 
-type MonadEsmtpd env st m = (MonadReader env m, HasEsmtpdEnv env m, MonadState st m, HasEsmtpdState st)
+instance HasSessionState EsmtpdState where
+  sessionState = session
+
+type MonadEsmtpd env st m = ( MonadReader env m, HasEsmtpdEnv env m
+                            , MonadState st m, HasEsmtpdState st, HasSessionState st
+                            )
 
 newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpdState (ReaderT (EsmtpdEnv Esmtpd) IO) a }
   deriving ( Applicative, Functor, Monad, MonadIO
@@ -118,7 +133,7 @@ esmtpdAcceptor tlsParams (sock,peerAddr) = do
   let myname = fromMaybe ("[" <> show localAddr <> "]") hn
       peername = fromMaybe ("[" <> show peerAddr <> "]") pn
   let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) (if isJust tlsParams then Unused else NotSupported)
-      st = EsmtpdState myname peername
+      st = EsmtpdState myname peername Initial
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
   ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
@@ -143,28 +158,32 @@ esmtpdAcceptorTls tlsParams env st (sock,peerAddr) =
 
 esmtpdIOLoop :: (MonadIO m, MonadEsmtpd env st m, MonadPeer env m, MonadLog env m) => ByteString -> m EsmtpdIOAction
 esmtpdIOLoop buf = do
-  let maxLineLength = 4096              -- TODO: magic constant
-      maxReadSize = maxLineLength - BS.length buf
-  if maxReadSize <= 0
-     then do logWarning $ "client exceeded maximum line length (" <> display maxLineLength <> " characters)"
-             return Shutdown
-     else do new <- recv (fromIntegral maxReadSize)
-             logDebug $ "recv: " <> display new
-             if BS.null new
-                then do logDebug $ "reached end of input (left-over in buffer: " <> display buf <> ")"
+  let (line,rest) = BS.breakSubstring "\r\n" buf
+  if BS.null rest
+     then do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
+             let maxLineLength = 4096              -- TODO: magic constant
+                 maxReadSize = maxLineLength - BS.length buf
+             if maxReadSize <= 0
+                then do logWarning $ "client exceeded maximum line length (" <> display maxLineLength <> " characters)"
                         return Shutdown
-                else case BS.breakSubstring "\r\n" (buf <> new) of
-                       (line,rest) | BS.null rest -> do logDebug $ "no complete line yet (buffer: " <> display line <> ")"
-                                                        esmtpdIOLoop line
-                                   | otherwise    -> do logDebug $ "read line: " <> display line
-                                                        (ioact,resp) <- esmtpdFSM (parseEsmtpCmd (line <> "\r\n") )
-                                                        send (packBS8 (show resp))
-                                                        case ioact of
-                                                          Nothing -> esmtpdIOLoop (BS.drop 2 rest)
-                                                          Just act -> return act
+                else do new <- recv (fromIntegral maxReadSize)
+                        logDebug $ "recv: " <> display new
+                        if BS.null new
+                           then do logDebug $ "reached end of input (left-over in buffer: " <> display buf <> ")"
+                                   return Shutdown
+                           else esmtpdIOLoop (buf <> new)
+     else do logDebug $ "read line: " <> display line
+             (ioact,resp) <- esmtpdFSM (parseEsmtpCmd (line <> "\r\n") )
+             send (packBS8 (show resp))
+             case ioact of
+               Nothing -> esmtpdIOLoop (BS.drop 2 rest)
+               Just act -> return act
 
 data EsmtpdIOAction = StartTls | Shutdown
   deriving (Show)
+
+
+{-# ANN esmtpdFSM ("HLint: ignore Reduce duplication" :: String) #-}
 
 esmtpdFSM :: MonadEsmtpd env st m => EsmtpCmd -> m (Maybe EsmtpdIOAction,  EsmtpReply)
 
@@ -174,14 +193,35 @@ esmtpdFSM Quit = do hn <- use myName
 esmtpdFSM StartTLS = ifM supportStartTls (respond' StartTls 2 2 0 ["starting TLS"])
                                          (respond 5 5 4 ["cannot start TLS"])
 
-esmtpdFSM (Helo _) = do hn <- use myName
-                        pn <- use peerName
-                        respond 2 5 0 [hn <> " Hello, " <> pn <> "."]
+esmtpdFSM (Helo name) = do hn <- use myName
+                           pn <- use peerName
+                           session .= HaveEhlo name
+                           respond 2 5 0 [hn <> " Hello, " <> pn <> "."]
 
-esmtpdFSM (Ehlo _) = do hn <- use myName
-                        pn <- use peerName
-                        withTls <- supportStartTls
-                        respond 2 5 0 $ [hn <> " Hello, " <> pn <> ".", "PIPELINING"] ++ ["STARTTLS" | withTls]
+esmtpdFSM (Ehlo name) = do hn <- use myName
+                           pn <- use peerName
+                           session .= HaveEhlo name
+                           withTls <- supportStartTls
+                           respond 2 5 0 $ [hn <> " Hello, " <> pn <> ".", "PIPELINING"] ++ ["STARTTLS" | withTls]
+
+esmtpdFSM Noop = respond 2 5 0 ["OK"]
+
+esmtpdFSM Rset = do name <- use ehloName
+                    unless (null name)  $
+                      session .= HaveEhlo name
+                    respond 2 5 0 ["OK"]
+
+esmtpdFSM (MailFrom addr) = use session >>= \case
+  Initial           -> respond 5 0 3 ["please send HELO or EHLO first"]
+  HaveEhlo {..}     -> session .= (HaveMailFrom {_envelope = addr, ..}) >> respond 2 5 0 ["OK"]
+  HaveMailFrom {..} -> respond 5 0 3 ["nested MAIL command"]
+  HaveRcptTo {..}   -> respond 5 0 3 ["nested MAIL command"]
+
+esmtpdFSM (RcptTo addr) = use session >>= \case
+  Initial           -> respond 5 0 3 ["please send HELO or EHLO first"]
+  HaveEhlo {..}     -> respond 5 0 3 ["please start MAIL session first"]
+  HaveMailFrom {..} -> session .= (HaveRcptTo {_rcptTo = [addr], ..}) >> respond 2 5 0 ["OK"]
+  HaveRcptTo {..}   -> rcptTo %= (:) addr >> respond 2 5 0 ["OK"]
 
 esmtpdFSM (SyntaxError _) = respond 5 0 0 ["syntax error: command not recognized"]
 esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
