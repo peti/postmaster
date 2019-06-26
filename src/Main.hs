@@ -23,6 +23,7 @@ module Main where
 
 import Paths_postmaster ( version )
 import Postmaster
+import Postmaster.Rfc2821 hiding ( postmaster, send, help )  -- TOOD: add to prelude
 
 import Control.Exception ( AssertionFailed(..) )
 import qualified Data.ByteString as BS
@@ -37,7 +38,6 @@ import System.Exit
 import System.Posix.Syslog as Syslog ( withSyslog, Facility(Mail) )
 import System.X509
 import Text.Parsec ( parse, eof )
-import Text.Parsec.Rfc2821 hiding ( postmaster, send, help )
 
 data TlsState = NotSupported | Unused | Connected
 

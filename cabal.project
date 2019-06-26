@@ -1,6 +1,5 @@
 packages:
   ./
-  ../hsemail
 
 package postmaster
   ghc-options:   -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates

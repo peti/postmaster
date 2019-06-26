@@ -30,6 +30,7 @@ executable postmaster
                     Postmaster.IO
                     Postmaster.Log
                     Postmaster.Prelude
+                    Postmaster.Rfc2821
   hs-source-dirs:   src
   build-depends:    base                 == 4.12.*
                   , bytestring           == 0.10.*
