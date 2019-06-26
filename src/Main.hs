@@ -246,6 +246,9 @@ tlsIO ctx = NetworkPeer (const (TLS.recvData ctx)) (TLS.sendData ctx . fromStric
 -- >>> parseListenAddr "0.0.0.0:25"
 -- (Just "0.0.0.0","25")
 --
+-- >>> parseListenAddr ":25"
+-- (Nothing,"25")
+--
 -- >>> parseListenAddr "localhost:smtp"
 -- (Just "localhost","smtp")
 --
@@ -257,5 +260,5 @@ tlsIO ctx = NetworkPeer (const (TLS.recvData ctx)) (TLS.sendData ctx . fromStric
 
 parseListenAddr :: String -> (Maybe HostName, ServiceName)
 parseListenAddr buf = case break (==':') (reverse buf) of
-                        (sn,"") -> (Nothing, reverse sn)
-                        (sn,hn) -> (Just (reverse (drop 1 hn)), reverse sn)
+  (sn,hn) | hn `elem` ["",":"] -> (Nothing, reverse sn)
+          | otherwise          -> (Just (reverse (drop 1 hn)), reverse sn)
