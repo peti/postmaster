@@ -81,21 +81,19 @@ instance Show EsmtpCmd where
 -- case-insensitive.
 
 data Mailbox = Mailbox [String] String String
+  deriving (Show, Read)
 
 instance Eq Mailbox where
   lhs == rhs = norm lhs == norm rhs where norm (Mailbox rt lp hp) = (rt, lp, map toLower hp)
 
-instance Show Mailbox where
-  show (Mailbox [] [] []) = "<>"
-  show (Mailbox [] "postmaster" []) = "<postmaster>"
-  show (Mailbox p u d) = "<" ++ route ++ (if null route then [] else ":") ++ mbox ++ ">"
-   where
-    route = intercalate "," . map ((:) '@') $ p
-    mbox  = u ++ "@" ++ d
+-- instance Show Mailbox where
+--   show (Mailbox [] [] []) = "<>"
+--   show (Mailbox [] "postmaster" []) = "<postmaster>"
+--   show (Mailbox p u d) = "<" ++ route ++ (if null route then [] else ":") ++ mbox ++ ">"
+--    where
+--     route = intercalate "," . map ((:) '@') $ p
+--     mbox  = u ++ "@" ++ d
 
-instance Read Mailbox where
-  readsPrec _ = parsec2read (path <|> mailbox)
-  readList = error "reading [Mailbox] is not supported"
 
 -- | @nullPath@ @=@ @'Mailbox' [] \"\" \"\" = \"\<\>\"@
 
