@@ -99,16 +99,16 @@ cli = info
 main :: IO ()
 main =
   withSocketsDo $
-    withSyslog "postmaster" [] Mail $ (do
+    withSyslog "postmaster" [] Mail $ do
       cfg <- execParser cli >>= makeConfiguration
-      runReaderT (runPostmaster (postmaster cfg)) (logToHandle stderr))
+      runReaderT (runPostmaster (postmaster cfg)) (logToHandle stderr)
 
 postmaster :: (MonadUnliftIO m, MonadLog env m) => Configuration -> m ()
 postmaster cfg =
   handle (\e -> logError ("fatal error: " <> display (e::SomeException)) >> liftIO exitFailure) $ do
     logDebug "postmaster starting up ..."
     logInfo $ display cfg
-    mapConcurrently_ (flip listener (acceptor (esmtpdAcceptor (tlsServerParams cfg)))) (listenAddresses cfg)
+    mapConcurrently_ (`listener` acceptor (esmtpdAcceptor (tlsServerParams cfg))) (listenAddresses cfg)
 
 esmtpdAcceptor :: MonadUnliftIO m => Maybe ServerParams -> SocketHandler m
 esmtpdAcceptor tlsParams (sock,peerAddr) = do
