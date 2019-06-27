@@ -27,6 +27,7 @@ import Postmaster.Rfc2821 hiding ( postmaster, send, help )  -- TOOD: add to pre
 
 import Control.Exception ( AssertionFailed(..) )
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
 import Data.List as List
 import Data.Version
 import Network.Socket
@@ -58,10 +59,19 @@ data SessionState = Initial
   deriving (Show)
 
 makeClassy ''SessionState
+makePrisms ''SessionState
+
+data ProtocolState = CommandPhase | DataPhase
+  deriving (Show)
+
+makeClassy ''ProtocolState
+makePrisms ''ProtocolState
 
 data EsmtpdState = EsmtpdState { _myName :: HostName, _peerName :: HostName
+                               , _ioState :: ProtocolState
                                , _session :: SessionState
                                }
+  deriving (Show)
 
 makeClassy ''EsmtpdState
 
@@ -133,7 +143,7 @@ esmtpdAcceptor tlsParams (sock,peerAddr) = do
   let myname = fromMaybe ("[" <> show localAddr <> "]") hn
       peername = fromMaybe ("[" <> show peerAddr <> "]") pn
   let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) (if isJust tlsParams then Unused else NotSupported)
-      st = EsmtpdState myname peername Initial
+      st = EsmtpdState myname peername CommandPhase Initial
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
   ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
@@ -173,15 +183,17 @@ esmtpdIOLoop buf = do
                                    return Shutdown
                            else esmtpdIOLoop (buf <> new)
      else do logDebug $ "read line: " <> display line
-             (ioact,resp) <- esmtpdFSM (parseEsmtpCmd (line <> "\r\n") )
-             send (packBS8 (show resp))
+             r <- use ioState >>= \case
+                CommandPhase -> Just <$> esmtpdFSM (parseEsmtpCmd (line <> "\r\n"))
+                DataPhase    -> esmtpdDataReader (line <> "\r\n")
+             ioact <- case r of Just (ioact,resp) -> send (packBS8 (show resp)) >> return ioact
+                                Nothing           -> return Nothing
              case ioact of
-               Nothing -> esmtpdIOLoop (BS.drop 2 rest)
+               Nothing  -> esmtpdIOLoop (BS.drop 2 rest)
                Just act -> return act
 
 data EsmtpdIOAction = StartTls | Shutdown
   deriving (Show)
-
 
 {-# ANN esmtpdFSM ("HLint: ignore Reduce duplication" :: String) #-}
 
@@ -223,10 +235,26 @@ esmtpdFSM (RcptTo addr) = use session >>= \case
   HaveMailFrom {..} -> session .= (HaveRcptTo {_rcptTo = [addr], ..}) >> respond 2 5 0 ["OK"]
   HaveRcptTo {..}   -> rcptTo %= (:) addr >> respond 2 5 0 ["OK"]
 
+esmtpdFSM Data = use session >>= \case
+  Initial           -> respond 5 0 3 ["please send HELO or EHLO first"]
+  HaveEhlo {..}     -> respond 5 0 3 ["please start MAIL session first"]
+  HaveMailFrom {..} -> respond 5 0 3 ["please add a RCPT address first"]
+  HaveRcptTo {..}   -> ioState .= DataPhase >> respond 3 5 4 ["enter mail and end with \".\" on a line by itself"]
+
 esmtpdFSM (SyntaxError _) = respond 5 0 0 ["syntax error: command not recognized"]
 esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
 
 esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
+
+
+
+esmtpdDataReader :: (MonadIO m, MonadEsmtpd env st m) => ByteString -> m (Maybe (Maybe EsmtpdIOAction,  EsmtpReply))
+esmtpdDataReader ""       = throwIO (AssertionFailed "esmtpdDataReader is not supposed to get an empty line")
+esmtpdDataReader ".\r\n"  = ioState .= CommandPhase >> Just <$> respond 2 5 0 ["OK"]
+esmtpdDataReader line
+  | BS8.head line == '.'  = return Nothing
+  | otherwise             = return Nothing
+
 
 ----- Helper functions
 
