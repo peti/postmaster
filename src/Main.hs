@@ -250,7 +250,7 @@ esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
 
 esmtpdDataReader :: (MonadIO m, MonadEsmtpd env st m) => ByteString -> m (Maybe (Maybe EsmtpdIOAction,  EsmtpReply))
 esmtpdDataReader ""       = throwIO (AssertionFailed "esmtpdDataReader is not supposed to get an empty line")
-esmtpdDataReader ".\r\n"  = ioState .= CommandPhase >> Just <$> respond 2 5 0 ["OK"]
+esmtpdDataReader ".\r\n"  = ioState .= CommandPhase >> Just <$> esmtpdFSM Rset
 esmtpdDataReader line
   | BS8.head line == '.'  = return Nothing
   | otherwise             = return Nothing
