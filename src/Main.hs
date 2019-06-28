@@ -140,10 +140,8 @@ postmaster cfg =
 esmtpdAcceptor :: MonadUnliftIO m => Maybe ServerParams -> SocketHandler m
 esmtpdAcceptor tlsParams (sock,peerAddr) = do
   localAddr <- liftIO (getSocketName sock)
-  (hn, _) <- liftIO (getNameInfo [] True False localAddr)
-  (pn, _) <- liftIO (getNameInfo [] True False peerAddr)
-  let myname = fromMaybe ("[" <> show localAddr <> "]") hn
-      peername = fromMaybe ("[" <> show peerAddr <> "]") pn
+  myname <- resolvePtr localAddr >>= maybe (showAddressLiteral localAddr) return
+  peername <- resolvePtr peerAddr >>= maybe (showAddressLiteral peerAddr) return
   let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) (if isJust tlsParams then Unused else NotSupported)
       st = EsmtpdState myname peername CommandPhase Initial
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)

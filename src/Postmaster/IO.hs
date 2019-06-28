@@ -8,13 +8,14 @@
    Portability: non-portable
  -}
 
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Postmaster.IO where
 
@@ -72,3 +73,27 @@ acceptor socketHandler (listenSocket,listenAddr) =
           unmask (enterContext (show connAddr) (logUncaughtExceptions (socketHandler peer)))
           `finally`
           liftIO (close connSock)
+
+-- | Wrap 'getNameInfo' for a more useful interface. Further details are at
+-- https://github.com/haskell/network/issues/416.
+
+resolvePtr :: MonadIO m => SockAddr -> m (Maybe HostName)
+resolvePtr addr = liftIO $
+  handleIO (const (return Nothing)) $
+    fst <$> Network.Socket.getNameInfo [NI_NAMEREQD] True False addr
+
+
+-- | Show a socket's IP address.
+
+showAddress :: MonadIO m => SockAddr -> m String
+showAddress addr = liftIO $
+  getNameInfo [NI_NUMERICHOST] True False addr
+  >>= maybe (throwString ("getNameInfo failed to format SockAddr " <> show addr)) return . fst
+
+
+-- | Show a socket address as an ESMTP address literal.
+--
+-- TODO: Needs testing with IPv6.
+
+showAddressLiteral :: MonadIO m => SockAddr -> m [Char]
+showAddressLiteral = showAddress >=> \x -> return ('[' : showString x "]")
