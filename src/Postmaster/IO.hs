@@ -110,6 +110,6 @@ showAddress addr = liftIO $
 showAddressLiteral :: MonadIO m => SockAddr -> m String
 showAddressLiteral addr = do
   x <- showAddress addr
-  let v6prefix = case addr of SockAddrInet6 _ _ _ _ -> "IPv6:"
-                              _                     -> ""
+  let v6prefix = case addr of SockAddrInet6 {} -> "IPv6:"
+                              _                -> ""
   return $ (:) '[' . showString v6prefix . showString x $ "]"
