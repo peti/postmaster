@@ -22,6 +22,8 @@ module Postmaster.Prelude
   , module Data.Maybe
   , module Data.String
   , module Data.Word
+  , module System.Directory
+  , module System.FilePath
   , module System.IO
   , module UnliftIO.Async
   , module UnliftIO.Concurrent
@@ -35,7 +37,7 @@ module Postmaster.Prelude
 
 import Prelude hiding ( fail )
 
-import Control.Lens hiding ( Context )
+import Control.Lens hiding ( Context, (<.>) )
 import Control.Monad.Extra hiding ( fail )
 import Control.Monad.Fail
 import Control.Monad.IO.Class
@@ -56,6 +58,8 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Encoding as LText
 import Data.Word
+import System.Directory
+import System.FilePath
 import System.IO hiding ( char8 )
 import UnliftIO.Async
 import UnliftIO.Concurrent

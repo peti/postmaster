@@ -10,7 +10,9 @@
 
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -23,7 +25,7 @@ module Main where
 
 import Paths_postmaster ( version )
 import Postmaster
-import Postmaster.Rfc2821 hiding ( postmaster, send, help )  -- TOOD: add to prelude
+import Postmaster.Rfc2821 hiding ( postmaster, send, help, path )  -- TOOD: add to prelude
 
 import Control.Exception ( AssertionFailed(..) )
 import Control.Monad.Trans.Resource
@@ -46,6 +48,7 @@ data TlsState = NotSupported | Unused | Connected
 data EsmtpdEnv m = EsmtpdEnv { _esmtpdLogger :: LogAction m LogMsg
                              , _esmtpdPeer :: NetworkPeer m
                              , _esmtpdTlsState :: TlsState
+                             , _esmtpdSpoolDir :: FilePath
                              }
 
 makeClassy ''EsmtpdEnv
@@ -71,8 +74,8 @@ makePrisms ''ProtocolState
 data EsmtpdState = EsmtpdState { _myName :: HostName, _peerName :: HostName
                                , _ioState :: ProtocolState
                                , _session :: SessionState
+                               , _spoolFile :: Maybe (ReleaseKey,(FilePath,Handle))
                                }
-  deriving (Show)
 
 makeClassy ''EsmtpdState
 
@@ -99,12 +102,14 @@ data CliOptions = CliOptions
   { listenAddressStrings :: [String]
   , tlsCertFile :: Maybe FilePath
   , tlsKeyFile :: Maybe FilePath
+  , spoolDir :: FilePath
   }
   deriving (Show)
 
 data Configuration = Configuration
   { listenAddresses :: [(Maybe HostName, ServiceName)]
   , tlsServerParams :: Maybe ServerParams
+  , spoolDir :: FilePath
   }
   deriving (Show)
 
@@ -113,6 +118,7 @@ cliOptions = do
   listenAddressStrings <- many (strOption $ long "listen" <> metavar "ADDR-SPEC" <> help "Accept incoming connections on this address. Can be specified multiple times.")
   tlsCertFile <- optional (strOption $ long "tls-cert" <> metavar "PATH" <> help "The server's TLS certificate.")
   tlsKeyFile <- optional (strOption $ long "tls-key" <> metavar "PATH" <> help "The server's TLS private key.")
+  spoolDir <- strOption (long "spool-dir" <> metavar "PATH" <> help "Path to the mail spool directory." <> value "/var/spool/mqueue")
   pure CliOptions {..}
 
 cli :: ParserInfo CliOptions
@@ -131,19 +137,19 @@ main =
       runReaderT (runPostmaster (postmaster cfg)) (logToHandle stderr)
 
 postmaster :: (MonadUnliftIO m, MonadLog env m) => Configuration -> m ()
-postmaster cfg =
+postmaster cfg@Configuration {..} =
   handle (\e -> logError ("fatal error: " <> display (e::SomeException)) >> liftIO exitFailure) $ do
     logDebug "postmaster starting up ..."
     logInfo $ display cfg
-    mapConcurrently_ (`listener` acceptor (esmtpdAcceptor (tlsServerParams cfg))) (listenAddresses cfg)
+    mapConcurrently_ (`listener` acceptor (esmtpdAcceptor tlsServerParams spoolDir)) listenAddresses
 
-esmtpdAcceptor :: MonadUnliftIO m => Maybe ServerParams -> SocketHandler m
-esmtpdAcceptor tlsParams (sock,peerAddr) = do
+esmtpdAcceptor :: MonadUnliftIO m => Maybe ServerParams -> FilePath -> SocketHandler m
+esmtpdAcceptor tlsParams spoolDir (sock,peerAddr) = do
   localAddr <- liftIO (getSocketName sock)
   myname <- resolvePtr localAddr >>= maybe (showAddressLiteral localAddr) return
   peername <- resolvePtr peerAddr >>= maybe (showAddressLiteral peerAddr) return
-  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) (if isJust tlsParams then Unused else NotSupported)
-      st = EsmtpdState myname peername CommandPhase Initial
+  let env = EsmtpdEnv (logToHandle stderr) (socketIO sock) (if isJust tlsParams then Unused else NotSupported) spoolDir
+      st = EsmtpdState myname peername CommandPhase Initial Nothing
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
   ioact <- liftIO $ runResourceT $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
@@ -239,21 +245,33 @@ esmtpdFSM Data = use session >>= \case
   Initial           -> respond 5 0 3 ["please send HELO or EHLO first"]
   HaveEhlo {..}     -> respond 5 0 3 ["please start MAIL session first"]
   HaveMailFrom {..} -> respond 5 0 3 ["please add a RCPT address first"]
-  HaveRcptTo {..}   -> ioState .= DataPhase >> respond 3 5 4 ["enter mail and end with \".\" on a line by itself"]
+  HaveRcptTo {..}   -> do spoolDir <- view esmtpdSpoolDir
+                          sf@(_,(_,fh)) <- allocate (openTempFile spoolDir "message.tmp") (\(path,fh) -> hClose fh >> whenM (doesFileExist path) (removeFile path))
+                          liftIO (hPutStr fh (shows (_envelope,_rcptTo) "\r\n"))
+                          spoolFile .= Just sf
+                          ioState .= DataPhase
+                          respond 3 5 4 ["enter mail and end with \".\" on a line by itself"]
 
 esmtpdFSM (SyntaxError _) = respond 5 0 0 ["syntax error: command not recognized"]
 esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd <> " command"]
 
 esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
 
-
 esmtpdDataReader :: MonadEsmtpd env st m => ByteString -> m (Maybe (Maybe EsmtpdIOAction,  EsmtpReply))
 esmtpdDataReader ""       = throwIO (AssertionFailed "esmtpdDataReader is not supposed to get an empty line")
-esmtpdDataReader ".\r\n"  = ioState .= CommandPhase >> Just <$> esmtpdFSM Rset
-esmtpdDataReader line
-  | BS8.head line == '.'  = return Nothing
-  | otherwise             = return Nothing
+esmtpdDataReader ".\r\n"  = do (relkey,(path,fh)) <- getSpoolFile
+                               liftIO (hClose fh >> renameFile path (dropExtension path))
+                               release relkey
+                               spoolFile .= Nothing
+                               ioState .= CommandPhase
+                               Just <$> esmtpdFSM Rset
+esmtpdDataReader line = do fh <- snd . snd <$> getSpoolFile
+                           liftIO (BS.hPutStr fh (if BS8.head line == '.' then BS.drop 1 line else line))
+                           return Nothing
 
+getSpoolFile :: MonadEsmtpd env st m => m (ReleaseKey, (FilePath, Handle))
+getSpoolFile = use spoolFile >>= maybe err return
+  where err = throwIO (AssertionFailed "spoolFile in unset in the middle of a DATA transmission")
 
 ----- Helper functions
 
