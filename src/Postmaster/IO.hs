@@ -84,6 +84,11 @@ resolvePtr addr = liftIO $
 
 
 -- | Show a socket's IP address.
+--
+-- >>> showAddress (SockAddrInet defaultPort (tupleToHostAddress (1,2,3,4)))
+-- "1.2.3.4"
+-- >>> showAddress (SockAddrInet6 defaultPort 0 (tupleToHostAddress6 (1,2,3,4,5,6,7,8)) 0)
+-- "1:2:3:4:5:6:7:8"
 
 showAddress :: MonadIO m => SockAddr -> m String
 showAddress addr = liftIO $
@@ -93,7 +98,18 @@ showAddress addr = liftIO $
 
 -- | Show a socket address as an ESMTP address literal.
 --
--- TODO: Needs testing with IPv6.
+-- >>> showAddressLiteral (SockAddrInet defaultPort (tupleToHostAddress (1,2,3,4)))
+-- "[1.2.3.4]"
+-- >>> showAddressLiteral (SockAddrInet6 defaultPort 0 (tupleToHostAddress6 (1,2,3,4,5,6,7,8)) 0)
+-- "[IPv6:1:2:3:4:5:6:7:8]"
+-- >>> showAddressLiteral (SockAddrInet6 defaultPort 0 (tupleToHostAddress6 (1,2,0,0,0,6,7,8)) 0)
+-- "[IPv6:1:2::6:7:8]"
+-- >>> showAddressLiteral (SockAddrInet6 defaultPort 0 (tupleToHostAddress6 (1,2,0,0,5,0,0,8)) 0)
+-- "[IPv6:1:2::5:0:0:8]"
 
-showAddressLiteral :: MonadIO m => SockAddr -> m [Char]
-showAddressLiteral = showAddress >=> \x -> return ('[' : showString x "]")
+showAddressLiteral :: MonadIO m => SockAddr -> m String
+showAddressLiteral addr = do
+  x <- showAddress addr
+  let v6prefix = case addr of SockAddrInet6 _ _ _ _ -> "IPv6:"
+                              _                     -> ""
+  return $ (:) '[' . showString v6prefix . showString x $ "]"
