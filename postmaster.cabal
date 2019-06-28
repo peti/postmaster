@@ -44,6 +44,7 @@ executable postmaster
                   , optparse-applicative == 0.14.*
                   , parsec               == 3.1.*
                   , resolv               == 0.1.*
+                  , resourcet            == 1.2.*
                   , text                 == 1.2.*
                   , tls                  == 1.5.*
                   , tls-session-manager  == 0.0.*

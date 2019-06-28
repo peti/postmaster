@@ -26,6 +26,7 @@ import Postmaster
 import Postmaster.Rfc2821 hiding ( postmaster, send, help )  -- TOOD: add to prelude
 
 import Control.Exception ( AssertionFailed(..) )
+import Control.Monad.Trans.Resource
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import Data.List as List
@@ -80,10 +81,11 @@ instance HasSessionState EsmtpdState where
 
 type MonadEsmtpd env st m = ( MonadReader env m, HasEsmtpdEnv env m
                             , MonadState st m, HasEsmtpdState st, HasSessionState st
+                            , MonadResource m
                             )
 
-newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpdState (ReaderT (EsmtpdEnv Esmtpd) IO) a }
-  deriving ( Applicative, Functor, Monad, MonadIO
+newtype Esmtpd a = Esmtpd { runEsmtpd :: StateT EsmtpdState (ReaderT (EsmtpdEnv Esmtpd) (ResourceT IO)) a }
+  deriving ( Applicative, Functor, Monad, MonadIO, MonadResource
            , MonadReader (EsmtpdEnv Esmtpd)
            , MonadState EsmtpdState
            )
@@ -146,7 +148,7 @@ esmtpdAcceptor tlsParams (sock,peerAddr) = do
       st = EsmtpdState myname peername CommandPhase Initial
       ioLoop = logWithPrefix (display peerAddr <> ": ") (esmtpdIOLoop mempty)
       greeting = send (packBS8 (show (reply 2 2 0 [myname <> " Postmaster ESMTP Server"])))
-  ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
+  ioact <- liftIO $ runResourceT $ runReaderT (evalStateT (runEsmtpd (greeting >> ioLoop)) st) env
   case ioact of
     StartTls -> case tlsParams of
                   Nothing -> throwIO (AssertionFailed "STARTTLS triggered even though TLS is unsupported")
@@ -161,12 +163,12 @@ esmtpdAcceptorTls tlsParams env st (sock,peerAddr) =
     let ioLoop = logWithPrefix (display peerAddr <> ": TLS: ") (esmtpdIOLoop mempty)
         env' = env & esmtpdPeer .~ tlsIO ctx
                    & esmtpdTlsState .~ Connected
-    ioact <- liftIO $ runReaderT (evalStateT (runEsmtpd ioLoop) st) env'
+    ioact <- liftIO $ runResourceT $ runReaderT (evalStateT (runEsmtpd ioLoop) st) env'
     case ioact of
       StartTls -> throwIO (AssertionFailed "STARTTLS triggered twice")
       Shutdown -> return ()
 
-esmtpdIOLoop :: (MonadIO m, MonadEsmtpd env st m, MonadPeer env m, MonadLog env m) => ByteString -> m EsmtpdIOAction
+esmtpdIOLoop :: (MonadResource m, MonadEsmtpd env st m, MonadPeer env m, MonadLog env m) => ByteString -> m EsmtpdIOAction
 esmtpdIOLoop buf = do
   let (line,rest) = BS.breakSubstring "\r\n" buf
   if BS.null rest
@@ -247,8 +249,7 @@ esmtpdFSM (WrongArg cmd) = respond 5 0 1 ["syntax error in argument of " <> cmd 
 esmtpdFSM cmd = respond 5 0 2 ["command " <> show cmd <> " not implemented"]
 
 
-
-esmtpdDataReader :: (MonadIO m, MonadEsmtpd env st m) => ByteString -> m (Maybe (Maybe EsmtpdIOAction,  EsmtpReply))
+esmtpdDataReader :: MonadEsmtpd env st m => ByteString -> m (Maybe (Maybe EsmtpdIOAction,  EsmtpReply))
 esmtpdDataReader ""       = throwIO (AssertionFailed "esmtpdDataReader is not supposed to get an empty line")
 esmtpdDataReader ".\r\n"  = ioState .= CommandPhase >> Just <$> esmtpdFSM Rset
 esmtpdDataReader line
