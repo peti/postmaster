@@ -27,6 +27,7 @@ executable postmaster
   other-modules:    Paths_postmaster
                     Postmaster
                     Postmaster.Error
+                    Postmaster.Esmtpd
                     Postmaster.IO
                     Postmaster.Log
                     Postmaster.Prelude

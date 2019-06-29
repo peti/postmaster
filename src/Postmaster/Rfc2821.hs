@@ -154,7 +154,8 @@ instance Show EsmtpReply where
     let prefixCon = show code ++ "-"
         prefixEnd = show code ++ " "
         fmt p l = p ++ l ++ "\r\n"
-        (x : xs) = reverse msg
+        (x, xs) = case reverse msg of (x':xs') -> (x',xs')
+                                      []       -> error "impossible"
         msgCon   = map (fmt prefixCon) xs
         msgEnd   = fmt prefixEnd x
         msg'     = reverse (msgEnd : msgCon)
