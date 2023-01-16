@@ -20,7 +20,7 @@ cabal-version: >= 1.10
 
 source-repository head
   type:     git
-  location: git://github.com/peti/postmaster.git
+  location: https://github.com/peti/postmaster.git
 
 executable postmaster
   main-is:          Main.hs
