@@ -13,7 +13,7 @@ other than those developing it. Stay tuned.
 
 ## LICENSE
 
-Postmaster ESMTP Server
+Postmaster ESMTP Server  
 Copyright (c) 2004-2019 Peter Simons
 
 This program is free software: you can redistribute it and/or modify it under
