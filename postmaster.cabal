@@ -7,7 +7,7 @@ description:   Postmaster implements an ESMTP server. Given a configuration, it 
                good local mailer is Procmail. Beyond that, you can configure and modify
                every little step of the SMTP transaction. All the real work is done
                through call-back functions.
-license:       AGPL-3
+license:       AGPL-3-or-later
 license-file:  LICENSE
 copyright:     Peter Simons
 maintainer:    Peter Simons <simons@cryp.to>
