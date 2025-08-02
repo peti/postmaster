@@ -43,6 +43,11 @@ jobs:
             compilerVersion: 9.8.4
             setup-method: ghcup
             allow-failure: false
+          - compiler: ghc-8.10.7
+            compilerKind: ghc
+            compilerVersion: 8.10.7
+            setup-method: ghcup
+            allow-failure: false
       fail-fast: false
     steps:
       - name: apt-get install
@@ -174,10 +179,10 @@ jobs:
           echo "packages: ${PKGDIR_postmaster}" >> cabal.project
           echo "package postmaster" >> cabal.project
           echo "    ghc-options: -Werror=missing-methods -Werror=missing-fields" >> cabal.project
-          echo "package postmaster" >> cabal.project
-          echo "    ghc-options: -Werror=unused-packages" >> cabal.project
-          echo "package postmaster" >> cabal.project
-          echo "    ghc-options: -Werror=incomplete-patterns -Werror=incomplete-uni-patterns" >> cabal.project
+          if [ $((HCNUMVER >= 90800)) -ne 0 ] ; then echo "package postmaster" >> cabal.project ; fi
+          if [ $((HCNUMVER >= 90800)) -ne 0 ] ; then echo "    ghc-options: -Werror=unused-packages" >> cabal.project ; fi
+          if [ $((HCNUMVER >= 90800)) -ne 0 ] ; then echo "package postmaster" >> cabal.project ; fi
+          if [ $((HCNUMVER >= 90800)) -ne 0 ] ; then echo "    ghc-options: -Werror=incomplete-patterns -Werror=incomplete-uni-patterns" >> cabal.project ; fi
           cat >> cabal.project <<EOF
           EOF
           $HCPKG list --simple-output --names-only | perl -ne 'for (split /\s+/) { print "constraints: any.$_ installed\n" unless /^(postmaster)$/; }' >> cabal.project.local

@@ -11,7 +11,7 @@ license:       AGPL-3-or-later
 license-file:  LICENSE
 copyright:     Peter Simons
 maintainer:    Peter Simons <simons@cryp.to>
-tested-with:   GHC == 9.8.4 || == 9.10.2 || == 9.12.2
+tested-with:   GHC == 8.10.7 || == 9.8.4 || == 9.10.2 || == 9.12.2
 category:      Network
 homepage:      https://github.com/peti/postmaster
 bug-reports:   https://github.com/peti/postmaster/issues
