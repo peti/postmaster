@@ -1,6 +1,6 @@
 {- |
    Module:      Postmaster
-   Copyright:   (C) 2004-2019 Peter Simons
+   Copyright:   (C) 2004-2025 Peter Simons
    License:     GNU AFFERO GPL v3 or later
 
    Maintainer:  simons@cryp.to
