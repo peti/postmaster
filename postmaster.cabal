@@ -11,7 +11,7 @@ license:       AGPL-3
 license-file:  LICENSE
 copyright:     Peter Simons
 maintainer:    Peter Simons <simons@cryp.to>
-tested-with:   GHC == 8.8.2
+tested-with:   GHC == 9.8.4 || == 9.10.2 || == 9.12.2
 category:      Network
 homepage:      https://github.com/peti/postmaster
 bug-reports:   https://github.com/peti/postmaster/issues
@@ -33,27 +33,27 @@ executable postmaster
                     Postmaster.Prelude
                     Postmaster.Rfc2821
   hs-source-dirs:   src
-  build-depends:    base                 == 4.13.*
-                  , bytestring           == 0.10.*
-                  , data-default-class   == 0.1.*
-                  , directory            == 1.3.*
-                  , extra                == 1.6.*
-                  , filepath             == 1.4.*
-                  , hsemail              == 2.2.*
-                  , hsyslog              == 5.0.*
-                  , lens                 == 4.19.*
-                  , mtl                  == 2.2.*
-                  , network              == 3.1.*
-                  , optparse-applicative == 0.15.*
-                  , parsec               == 3.1.*
-                  , resolv               == 0.1.*
-                  , resourcet            == 1.2.*
-                  , text                 == 1.2.*
-                  , tls                  == 1.5.*
-                  , tls-session-manager  == 0.0.*
-                  , unliftio             >= 0.2.11 && < 0.3
-                  , unliftio-core        == 0.1.*
-                  , x509-store           == 1.6.*
-                  , x509-system          == 1.6.*
+  build-depends:    base
+                  , bytestring
+                  , data-default-class
+                  , directory
+                  , extra
+                  , filepath
+                  , hsemail
+                  , hsyslog
+                  , lens
+                  , mtl
+                  , network
+                  , optparse-applicative
+                  , parsec
+                  , resolv
+                  , resourcet
+                  , text
+                  , tls >= 2.1
+                  , tls-session-manager
+                  , unliftio
+                  , unliftio-core
+                  , crypton-x509-store
+                  , crypton-x509-system
   default-language: Haskell2010
   ghc-options:      -threaded
