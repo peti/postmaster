@@ -46,14 +46,12 @@ executable postmaster
                   , network
                   , optparse-applicative
                   , parsec
-                  , resolv
                   , resourcet
                   , text
                   , tls >= 2.1
                   , tls-session-manager
                   , unliftio
                   , unliftio-core
-                  , crypton-x509-store
                   , crypton-x509-system
   default-language: Haskell2010
   ghc-options:      -threaded
